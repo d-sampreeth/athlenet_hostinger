@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "check": "node --check src/server.js",
     "test": "node --test tests/feed.integration.test.js",
-    "build": "npm install --prefix frontend && npm run build --prefix frontend"
+    "build": "npm install --prefix frontend && npm run build --prefix frontend",
+    "postinstall": "npm run build"
   },
   "engines": {
     "node": ">=20"
