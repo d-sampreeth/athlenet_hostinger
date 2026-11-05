@@ -7,7 +7,8 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "check": "node --check src/server.js",
-    "test": "node --test tests/feed.integration.test.js"
+    "test": "node --test tests/feed.integration.test.js",
+    "build": "npm install --prefix frontend && npm run build --prefix frontend"
   },
   "engines": {
     "node": ">=20"

@@ -20,7 +20,13 @@ app.use(helmet({crossOriginResourcePolicy:{policy:'cross-origin'}}));
 app.use(cors({origin:(origin,cb)=>!origin||origins.includes('*')||origins.includes(origin)?cb(null,true):cb(new Error('Origin not allowed by CORS')),credentials:true}));
 app.use(express.json({limit:'2mb'}));app.use(express.urlencoded({extended:true}));
 app.use('/media',express.static(uploadDir));
-app.get('/',(req,res)=>res.json({status:'ok',service:'athlenet-node-backend'}));
+const frontendDist = path.resolve(__dirname, '../frontend/dist');
+
+app.use(express.static(frontendDist));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(frontendDist, 'index.html'));
+});
 app.get('/health',(req,res)=>res.json({status:'ok',service:'athlenet-node-backend'}));
 app.get('/api/health',(req,res)=>res.json({status:'ok'}));
 
@@ -234,7 +240,18 @@ app.post('/api/conversations',...auth(async(req,res)=>{
  const target=Number(req.body.user_id);if(!target||target===req.user.id)return res.status(400).json({detail:'Valid user_id is required.'});if(!(await query('SELECT 1 FROM users WHERE id=$1',[target])).rowCount)return res.status(404).json({detail:'User not found.'});
  const a=Math.min(target,req.user.id),b=Math.max(target,req.user.id);const r=await query('INSERT INTO conversations(user1_id,user2_id) VALUES($1,$2) ON CONFLICT(user1_id,user2_id) DO UPDATE SET updated_at=NOW() RETURNING *',[a,b]);res.status(201).json(r.rows[0]);
 }));
+// React SPA fallback
+app.get('*', (req, res, next) => {
+  if (
+    req.path.startsWith('/api/') ||
+    req.path.startsWith('/media/') ||
+    req.path === '/health'
+  ) {
+    return next();
+  }
 
+  res.sendFile(path.join(frontendDist, 'index.html'));
+});
 app.use((err,req,res,next)=>{console.error(err);if(res.headersSent)return next(err);if(err.code==='23505')return res.status(400).json({detail:'A record with these details already exists.'});if(err.code==='23503')return res.status(400).json({detail:'Referenced record does not exist.'});res.status(500).json({detail:process.env.NODE_ENV==='production'?'Internal server error.':err.message});});
 const port=process.env.PORT||5000;
 await initDb();
