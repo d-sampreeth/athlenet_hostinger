@@ -21,7 +21,7 @@ function authorName(p) {
   return p.author_name || p.author_username || p.username || 'Member';
 }
 
-export default function CommunityFeed({ currentUserId }) {
+export default function CommunityFeed({ currentUserId, hasPincode }) {
   const [source, setSource] = useState('all');
   const [posts, setPosts] = useState([]);
   const [page, setPage] = useState(1);
@@ -91,7 +91,7 @@ export default function CommunityFeed({ currentUserId }) {
         ))}
       </div>
 
-      {fallback && source === 'all' && (
+      {fallback && source === 'all' && !hasPincode && (
         <p className="mb-3 rounded-xl bg-orange-50 px-4 py-2 text-sm text-orange-700">
           Add your sport and PIN code in your profile to personalise this feed. Showing the latest posts for now.
         </p>

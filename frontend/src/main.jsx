@@ -151,7 +151,7 @@ function PublicHome() {
 }
 
 function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, refresh } = useAuth();
   const nav = useNavigate(); const loc = useLocation();
   const mainRef = useRef(null);
   const [mobile, setMobile] = useState(false); const [q, setQ] = useState('');
@@ -202,7 +202,8 @@ function Layout() {
   const topNavItems = [['/','Home',Home],['/news','Local Hub',Users],['/connections','Connections',UserPlus],['/opportunities','Opportunities',Target],['/create','Create',Plus],['/chat','Messaging',MessageCircle],['/notifications','Notifications',Bell]];
   const displayName = user?.user?.name || user?.user?.username || 'athlete';
   const profileDetails = user?.player_details || user?.coach_details;
-  const completionItems = [user?.photo, user?.bio, user?.location, profileDetails?.sport];
+  const sportsInterests = user?.interests?.split(',').map(interest=>interest.trim()).filter(Boolean) || [];
+  const completionItems = [user?.photo, user?.bio, user?.location, user?.role==='user' ? user?.interests : profileDetails?.sport];
   const profileCompletion = Math.round(completionItems.filter(Boolean).length / completionItems.length * 100);
   return <div className="signed-in-app min-h-screen bg-[#f5f7fb]">
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -247,7 +248,7 @@ function Layout() {
             </div>
           </div>
         </section>
-        <section className="card mb-4 p-4">
+        {user?.role==='user' ? <SportsInterestsCard interests={sportsInterests} onSaved={refresh}/> : <section className="card mb-4 p-4">
           <h2 className="text-xs font-black uppercase tracking-wide text-slate-500">Your sports profile</h2>
           <div className="mt-3 space-y-3">
             <div className="flex items-start gap-2.5"><Trophy size={15} className="mt-0.5 shrink-0 text-orange-500"/><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Sport</p><p className="truncate text-xs font-bold text-slate-700">{profileDetails?.sport || 'Add your sport'}</p></div></div>
@@ -255,7 +256,7 @@ function Layout() {
             {profileDetails?.academy&&<div className="flex items-start gap-2.5"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-orange-500"/><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Academy</p><p className="truncate text-xs font-bold text-slate-700">{profileDetails.academy}</p></div></div>}
             {profileDetails?.verified&&<div className="flex items-center gap-2 text-[11px] font-bold text-emerald-700"><ShieldCheck size={14}/>Verified coach</div>}
           </div>
-        </section>
+        </section>}
         {profileDetails?.achievements?.length>0&&<section className="card mb-4 p-4">
           <div className="flex items-center justify-between gap-2"><h2 className="text-xs font-black uppercase tracking-wide text-slate-500">Recent achievement</h2><Award size={15} className="shrink-0 text-orange-500"/></div>
           {profileDetails.achievements.slice(0,2).map(achievement=><div key={achievement.id} className="mt-3 border-t border-slate-100 pt-3 first:mt-3"><p className="text-xs font-bold leading-5 text-slate-800">{achievement.title}</p><p className="mt-0.5 text-[10px] text-slate-400">{achievement.year || 'Achievement'}</p></div>)}
@@ -265,7 +266,7 @@ function Layout() {
           <h2 className="text-xs font-black uppercase tracking-wide text-slate-500">Quick actions</h2>
           <div className="mt-2 space-y-1">
             <Link to="/create" onClick={()=>setMobile(false)} className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-xs font-bold text-slate-700 transition hover:bg-orange-50 hover:text-orange-700"><Plus size={15} className="text-orange-500"/>Share an update</Link>
-            <Link to="/profile" onClick={()=>setMobile(false)} className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-xs font-bold text-slate-700 transition hover:bg-orange-50 hover:text-orange-700"><Edit3 size={15} className="text-orange-500"/>Edit sports profile</Link>
+            <Link to="/profile" onClick={()=>setMobile(false)} className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-xs font-bold text-slate-700 transition hover:bg-orange-50 hover:text-orange-700"><Edit3 size={15} className="text-orange-500"/>{user?.role==='user'?'Edit interests':'Edit sports profile'}</Link>
           </div>
         </section>
         <Link to="/profile" onClick={()=>setMobile(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"><Settings size={15}/>Account & profile settings</Link>
@@ -299,11 +300,11 @@ function HomePage() {
             <Link to="/create" className="flex min-h-11 flex-1 items-center rounded-full border border-slate-200 px-4 text-sm text-slate-500 transition hover:border-slate-300 hover:bg-slate-50">Share a sports update with your community...</Link>
           </div>
           <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-            <Link to="/create" className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-orange-50 hover:text-orange-700"><Award size={17} className="text-orange-500"/>Share an achievement</Link>
+            {user?.role!=='user'&&<Link to="/create" className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-orange-50 hover:text-orange-700"><Award size={17} className="text-orange-500"/>Share an achievement</Link>}
             <Link to="/create" className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-orange-50 hover:text-orange-700"><BriefcaseBusiness size={16} className="text-blue-600"/>Post an update</Link>
           </div>
         </div>
-        <CommunityFeed currentUserId={user?.user?.id} />
+        <CommunityFeed currentUserId={user?.user?.id} hasPincode={Boolean(user?.pincode?.trim())} />
       </section>
       <aside className="space-y-5">
         <section className="card p-5">
@@ -322,6 +323,42 @@ function HomePage() {
       </aside>
     </div>}
   </div>;
+}
+
+function SportsInterestsCard({interests,onSaved}) {
+  const [value,setValue]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const save=async nextInterests=>{
+    setBusy(true);
+    setError('');
+    try {
+      await API.patch('/me/',{interests:nextInterests.join(', ')});
+      await onSaved();
+      return true;
+    } catch (e) {
+      setError(e.response?.data?.detail||'Unable to update sports interests. Please try again.');
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const add=async e=>{
+    e.preventDefault();
+    const interest=value.trim();
+    if(!interest||interests.some(item=>item.toLowerCase()===interest.toLowerCase()))return;
+    if(await save([...interests,interest]))setValue('');
+  };
+  const remove=interest=>save(interests.filter(item=>item!==interest));
+  return <section className="card mb-4 p-4">
+    <h2 className="text-xs font-black uppercase tracking-wide text-slate-500">Your sports interests</h2>
+    {interests.length ? <div className="mt-3 flex flex-wrap gap-2">{interests.map(interest=><span key={interest} className="inline-flex items-center gap-1 rounded-full bg-orange-50 py-1 pl-3 pr-1 text-xs font-semibold text-orange-700">{interest}<button type="button" onClick={()=>remove(interest)} disabled={busy} aria-label={`Remove ${interest}`} className="rounded-full p-1 hover:bg-orange-100 disabled:opacity-50"><X size={12}/></button></span>)}</div> : <p className="mt-3 text-xs leading-5 text-slate-500">Add the sports you enjoy to see more relevant community updates.</p>}
+    <form onSubmit={add} className="mt-3 flex gap-2">
+      <input value={value} onChange={e=>setValue(e.target.value)} aria-label="Add a sports interest" placeholder="Add a sport" className="input min-w-0 flex-1 py-2 text-xs" maxLength={50}/>
+      <button type="submit" disabled={busy||!value.trim()} className="btn-primary px-3 py-2 text-xs"><Plus size={14}/>Add</button>
+    </form>
+    {error&&<p role="alert" className="mt-2 text-xs text-red-600">{error}</p>}
+  </section>;
 }
 
 function OpportunityCard({o}) {
@@ -344,7 +381,7 @@ function Opportunities() {
 function OpportunityModal({onClose,onCreated}){const [d,setD]=useState({sport:'Cricket'});const [busy,setBusy]=useState(false);const set=(k,v)=>setD(x=>({...x,[k]:v}));const submit=async e=>{e.preventDefault();setBusy(true);try{await API.post('/opportunities/',d);alert('Opportunity created.');onCreated()}catch(e){alert(JSON.stringify(e.response?.data)||'Unable to create opportunity.')}finally{setBusy(false)}};return <Modal title="Create sports opportunity" onClose={onClose}><form onSubmit={submit} className="grid gap-4 md:grid-cols-2"><Field label="Title" value={d.title||''} onChange={v=>set('title',v)} required/><Field label="Sport" value={d.sport||''} onChange={v=>set('sport',v)} required/><Field label="Location" value={d.location||''} onChange={v=>set('location',v)} required/><Field label="Slots" type="number" value={d.slots||20} onChange={v=>set('slots',v)} required/><Field label="Event date" type="date" value={d.event_date||''} onChange={v=>set('event_date',v)} required/><Field label="Application deadline" type="date" value={d.last_date||''} onChange={v=>set('last_date',v)} required/><div className="md:col-span-2"><label className="label">Description</label><textarea className="input min-h-28" value={d.description||''} onChange={e=>set('description',e.target.value)} required/></div><div className="md:col-span-2"><label className="label">Eligibility</label><textarea className="input min-h-20" value={d.eligibility||''} onChange={e=>set('eligibility',e.target.value)} placeholder="Age, level, documents, etc."/></div><div className="flex justify-end gap-2 md:col-span-2"><button type="button" onClick={onClose} className="btn-ghost">Cancel</button><button disabled={busy} className="btn-primary">{busy?'Publishing...':'Publish opportunity'}</button></div></form></Modal>}
 
 function Create(){const {user}=useAuth();const [tab,setTab]=useState('post');return <div className="page-wide"><PageHead icon={Plus} title="Create on Athlenet" sub="Share useful sports updates and opportunities — meaningful content only."/><div className="mb-6 flex rounded-2xl bg-slate-200 p-1"><button onClick={()=>setTab('post')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black ${tab==='post'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>Community post</button><button onClick={()=>setTab('opportunity')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black ${tab==='opportunity'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>Opportunity</button></div>{tab==='post'?<PostComposer/>:user?.role==='coach'?<OpportunityModal onClose={()=>setTab('post')} onCreated={()=>setTab('post')}/>:<div className="card p-8 text-center"><ShieldCheck className="mx-auto text-orange-500"/><h2 className="mt-3 text-xl font-black">Coach access required</h2><p className="mt-1 text-sm text-slate-500">Only verified/registered coaches can publish opportunities.</p></div>}</div>}
-function PostComposer(){const [d,setD]=useState({post_type:'achievement',content:''});const [busy,setBusy]=useState(false);const set=(k,v)=>setD(x=>({...x,[k]:v}));const submit=async e=>{e.preventDefault();setBusy(true);try{const fd=new FormData();Object.entries(d).forEach(([k,v])=>v&&fd.append(k,v));await API.post('/posts/',fd);setD({post_type:'achievement',content:''});alert('Post published successfully.')}catch(e){alert(JSON.stringify(e.response?.data)||'Unable to publish post.')}finally{setBusy(false)}};return <form onSubmit={submit} className="card p-5 sm:p-7"><div className="grid gap-4 md:grid-cols-[260px_1fr]"><div><label className="label">Post type</label><select className="input" value={d.post_type} onChange={e=>set('post_type',e.target.value)}>{[['achievement','Achievement'],['camp','Training Camp'],['trial','Trial'],['recruitment','Recruitment'],['discussion','Discussion'],['awareness','Awareness']].map(x=><option key={x[0]} value={x[0]}>{x[1]}</option>)}</select></div><div><label className="label">What would you like to share?</label><textarea className="input min-h-32" value={d.content} onChange={e=>set('content',e.target.value)} placeholder="Share an achievement, useful sports update, event information..." required/></div><div className="md:col-span-2"><label className="label">Image (optional)</label><input type="file" accept="image/*" onChange={e=>set('image',e.target.files?.[0])} className="block w-full rounded-xl border border-slate-200 p-3 text-sm"/></div></div><button disabled={busy} className="btn-primary mt-5 w-full">{busy?'Publishing...':'Publish post'}</button></form>}
+function PostComposer(){const {user}=useAuth();const generalUser=user?.role==='user';const initialPostType=generalUser?'discussion':'achievement';const [d,setD]=useState(()=>({post_type:initialPostType,content:''}));const [busy,setBusy]=useState(false);const set=(k,v)=>setD(x=>({...x,[k]:v}));const submit=async e=>{e.preventDefault();setBusy(true);try{const fd=new FormData();Object.entries(d).forEach(([k,v])=>v&&fd.append(k,v));await API.post('/posts/',fd);setD({post_type:initialPostType,content:''});alert('Post published successfully.')}catch(e){alert(JSON.stringify(e.response?.data)||'Unable to publish post.')}finally{setBusy(false)}};const postTypes=[['achievement','Achievement'],['camp','Training Camp'],['trial','Trial'],['recruitment','Recruitment'],['discussion','Discussion'],['awareness','Awareness']];return <form onSubmit={submit} className="card p-5 sm:p-7"><div className="grid gap-4 md:grid-cols-[260px_1fr]"><div><label className="label">Post type</label><select className="input" value={d.post_type} onChange={e=>set('post_type',e.target.value)}>{postTypes.filter(([type])=>!generalUser||type!=='achievement').map(x=><option key={x[0]} value={x[0]}>{x[1]}</option>)}</select></div><div><label className="label">What would you like to share?</label><textarea className="input min-h-32" value={d.content} onChange={e=>set('content',e.target.value)} placeholder="Share a useful sports update, event information, or start a discussion..." required/></div><div className="md:col-span-2"><label className="label">Image (optional)</label><input type="file" accept="image/*" onChange={e=>set('image',e.target.files?.[0])} className="block w-full rounded-xl border border-slate-200 p-3 text-sm"/></div></div><button disabled={busy} className="btn-primary mt-5 w-full">{busy?'Publishing...':'Publish post'}</button></form>}
 
 function PostCard({p,onDeleted}){const {user}=useAuth();return <article className="card overflow-hidden"><div className="flex items-center gap-3 p-5"><Avatar src={p.author?.photo} name={p.author?.name}/><div className="min-w-0"><Link to={`/profile/${p.author?.username}`} className="font-black hover:text-orange-600">{p.author?.name}</Link><div className="text-xs text-slate-400">{p.post_type} · {new Date(p.created_at).toLocaleDateString()}</div></div></div>{p.image&&<img src={mediaUrl(p.image)} className="max-h-80 w-full object-cover" alt=""/>}<p className="px-5 pb-4 text-sm leading-6 text-slate-700">{p.content}</p><PostActions post={p} currentUserId={user?.user?.id} onDeleted={onDeleted}/></article>}
 function Connections(){const [members,setMembers]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const load=async()=>{setLoading(true);setError('');try{const r=await API.get('/connections/');setMembers(r.data)}catch{setError('Could not load the people you follow. Check your connection and try again.')}finally{setLoading(false)}};useEffect(()=>{load()},[]);const updateMember=(id,changes)=>{if(changes.is_following===false)setMembers(items=>items.filter(member=>member.user.id!==id))};return <div className="page-wide"><PageHead icon={UserPlus} title="Following" sub="People you follow on Athlenet."/><div className="mb-4 text-sm text-slate-500">{members.length} following</div>{error?<InlineError message={error} onRetry={load}/>:loading?<Loader/>:members.length?<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{members.map(member=><MemberCard key={member.user.id} member={member} onUpdate={updateMember}/>)}</div>:<Empty title="You're not following anyone yet" text="Visit the Local Hub and connect with players, coaches and community members."/ >}</div>}
