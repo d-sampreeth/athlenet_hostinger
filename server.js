@@ -29,7 +29,7 @@ const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadsDir),
   filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname).toLowerCase()}`),
 });
-const upload = multer({ storage, limits: { fileSize: 8 * 1024 * 1024 } });
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
@@ -47,7 +47,14 @@ const fullName = (u) => `${u.first_name || ''} ${u.last_name || ''}`.trim() || u
 const normalizePhone = (v='') => {
   let d = String(v).replace(/\D/g,'');
   if (d.length===12 && d.startsWith('91')) d=d.slice(2);
-  return d.length===10 ? d : '';
+  if (!/^[6-9]\d{9}$/.test(d)) return '';
+  const counts = new Map();
+  for (const digit of d) {
+    const count = (counts.get(digit) || 0) + 1;
+    if (count > 6) return '';
+    counts.set(digit, count);
+  }
+  return d;
 };
 const validPassword = (p) => typeof p==='string' && p.length>=8 && /[a-z]/.test(p) && /[A-Z]/.test(p) && /[^A-Za-z0-9]/.test(p);
 const validPin = (p) => /^[1-9][0-9]{5}$/.test(String(p||''));
@@ -129,18 +136,25 @@ function auth(required=true) {
 function asyncRoute(fn) { return (req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next); }
 function pickFile(req,name) { return req.files?.[name]?.[0]?.path || req.file?.path || null; }
 const fields = upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1},{name:'achievement_proof',maxCount:1},{name:'image',maxCount:1}]);
+const validatePhotoSize = (req,res,next) => {
+  const photo=req.files?.photo?.[0];
+  if(!photo||photo.size<=1024*1024)return next();
+  Promise.all(Object.values(req.files).flat().map(file=>fs.promises.unlink(file.path)))
+    .then(()=>res.status(400).json({detail:'Profile photos must not exceed 1 MB.'}),next);
+};
+const fieldsWithPhotoLimit = [fields,validatePhotoSize];
 
 app.get('/',(_req,res)=>res.json({status:'ok',service:'athlenet-node-backend'}));
 app.get('/health',(_req,res)=>res.json({status:'ok',service:'athlenet-node-backend'}));
 app.get('/api/health/',(_req,res)=>res.json({status:'ok'}));
 
-app.post('/api/auth/register/',fields,asyncRoute(async(req,res)=>{
+app.post('/api/auth/register/',fieldsWithPhotoLimit,asyncRoute(async(req,res)=>{
   const d=req.body, email=String(d.email||'').trim().toLowerCase(), username=String(d.username||email).trim(), password=d.password||'';
   if(!username||!email||!password) return res.status(400).json({detail:'Username, email and password are required.'});
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({detail:'Enter a valid email address.'});
   if(!validPassword(password)) return res.status(400).json({detail:'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, and a special character.'});
   const phone=String(d.phone||'').trim(), phoneKey=phone?normalizePhone(phone):'';
-  if(phone&&!phoneKey) return res.status(400).json({detail:'Enter a valid 10-digit mobile number, optionally prefixed with +91.'});
+  if(phone&&!phoneKey) return res.status(400).json({detail:'Enter a 10-digit mobile number starting with 6, 7, 8, or 9; no digit may appear more than 6 times.'});
   if(!validPin(d.pincode)) return res.status(400).json({pincode:['A 6-digit Indian PIN code is required.']});
   const role=d.role||'user';
   if(!roles.includes(role)) return res.status(400).json({detail:'Invalid role.'});
@@ -181,7 +195,7 @@ app.post('/api/token/refresh/',asyncRoute(async(req,res)=>{
 app.get('/api/me/',auth(),asyncRoute(async(req,res)=>{
   const p=await profileFor(req.user.id); const data=await profileDetails(p); data.email=req.user.email; data.pincode=p.pincode; res.json(data);
 }));
-app.patch('/api/me/',auth(),fields,asyncRoute(async(req,res)=>{
+app.patch('/api/me/',auth(),fieldsWithPhotoLimit,asyncRoute(async(req,res)=>{
   const p=await profileFor(req.user.id), d=req.body;
   if(d.username && d.username!==req.user.username) return res.status(400).json({username:['Username cannot be changed.']});
   if(d.role && d.role!==p.role) return res.status(400).json({role:['Account role cannot be changed.']});
@@ -189,7 +203,7 @@ app.patch('/api/me/',auth(),fields,asyncRoute(async(req,res)=>{
   if(d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({detail:'Enter a valid email address.'});
   if(d.email && (await q('SELECT 1 FROM users WHERE lower(email)=lower($1) AND id<>$2',[email,req.user.id])).rowCount) return res.status(400).json({detail:'An account with this email address already exists.'});
   const phone=String(d.phone??p.phone).trim(), key=phone?normalizePhone(phone):'';
-  if(d.phone&&phone&&!key) return res.status(400).json({detail:'Enter a valid 10-digit mobile number, optionally prefixed with +91.'});
+  if(d.phone&&phone&&!key) return res.status(400).json({detail:'Enter a 10-digit mobile number starting with 6, 7, 8, or 9; no digit may appear more than 6 times.'});
   if(key&&(await q('SELECT 1 FROM profiles WHERE phone_key=$1 AND user_id<>$2',[key,req.user.id])).rowCount) return res.status(400).json({detail:'An account with this mobile number already exists.'});
   if(d.pincode!==undefined&&!validPin(d.pincode)) return res.status(400).json({pincode:['Enter a valid 6-digit Indian PIN code.']});
   await q(`UPDATE users SET email=$1,first_name=$2,last_name=$3 WHERE id=$4`,[email,d.first_name??req.user.first_name,d.last_name??req.user.last_name,req.user.id]);

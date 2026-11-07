@@ -2,7 +2,12 @@ import { query } from './db.js';
 export const asyncHandler = fn => (req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 export const clean = v => String(v ?? '').trim();
 export function validPassword(p){return typeof p==='string'&&p.length>=8&&/[a-z]/.test(p)&&/[A-Z]/.test(p)&&/[^A-Za-z0-9]/.test(p);}
-export function normalizePhone(phone){let d=String(phone||'').replace(/\D/g,'');if(d.length===12&&d.startsWith('91'))d=d.slice(2);return d.length===10?d:'';}
+export function normalizePhone(phone){
+ let d=String(phone||'').replace(/\D/g,'');if(d.length===12&&d.startsWith('91'))d=d.slice(2);
+ if(!/^[6-9]\d{9}$/.test(d))return '';
+ const counts=new Map();for(const digit of d){const count=(counts.get(digit)||0)+1;if(count>6)return '';counts.set(digit,count);}
+ return d;
+}
 export async function userMini(id){
  const r=await query(`SELECT u.id,u.username,u.first_name,u.last_name,p.role,p.photo,p.location
  FROM users u LEFT JOIN profiles p ON p.user_id=u.id WHERE u.id=$1`,[id]);

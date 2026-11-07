@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'node:path';
+import { unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { initDb, pool, query } from './db.js';
 import { requireAuth, issueTokens } from './middleware/auth.js';
@@ -14,7 +15,13 @@ import multer from 'multer';
 const app=express();
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const uploadDir=path.resolve(__dirname,'../uploads');
-const upload=multer({dest:uploadDir,limits:{fileSize:8*1024*1024}});
+const upload=multer({dest:uploadDir,limits:{fileSize:5*1024*1024}});
+const validatePhotoSize=(req,res,next)=>{
+ const photo=req.files?.photo?.[0];
+ if(!photo||photo.size<=1024*1024)return next();
+ Promise.all(Object.values(req.files).flat().map(file=>unlink(file.path)))
+  .then(()=>res.status(400).json({detail:'Profile photos must not exceed 1 MB.'}),next);
+};
 const origins=(process.env.FRONTEND_ORIGINS||'http://localhost:5173').split(',').map(x=>x.trim());
 app.use(helmet({crossOriginResourcePolicy:{policy:'cross-origin'}}));
 app.use(cors({origin:(origin,cb)=>!origin||origins.includes('*')||origins.includes(origin)?cb(null,true):cb(new Error('Origin not allowed by CORS')),credentials:true}));
@@ -37,14 +44,14 @@ const profileId=async uid=>(await query('SELECT id FROM profiles WHERE user_id=$
 const mini=async id=>userMini(id);
 
 // Authentication: preserves the frontend's /api/auth/register and /api/auth/login contract.
-app.post('/api/auth/register',upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1},{name:'achievement_proof',maxCount:1}]),publicAsync(async(req,res)=>{
+app.post('/api/auth/register',upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1},{name:'achievement_proof',maxCount:1}]),validatePhotoSize,publicAsync(async(req,res)=>{
  const d={...req.body};const email=clean(d.email).toLowerCase(),username=clean(d.username)||email,password=d.password;
  if(!email||!username||!password)return res.status(400).json({detail:'Username, email and password are required.'});
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({detail:'Enter a valid email address.'});
  if(!validPassword(password))return res.status(400).json({detail:'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, and a special character.'});
  const role=d.role||'user';if(!['user','player','coach'].includes(role))return res.status(400).json({detail:'Invalid role.'});
  const pincode=clean(d.pincode);if(!/^[1-9][0-9]{5}$/.test(pincode))return res.status(400).json({pincode:['A 6-digit Indian PIN code is required.']});
- const phone=clean(d.phone),phoneKey=normalizePhone(phone);if(phone&&!phoneKey)return res.status(400).json({detail:'Enter a valid 10-digit mobile number, optionally prefixed with +91.'});
+ const phone=clean(d.phone),phoneKey=normalizePhone(phone);if(phone&&!phoneKey)return res.status(400).json({detail:'Enter a 10-digit mobile number starting with 6, 7, 8, or 9; no digit may appear more than 6 times.'});
  const exists=await query('SELECT 1 FROM users WHERE username=$1 OR lower(email)=lower($2)',[username,email]);if(exists.rowCount)return res.status(400).json({detail:'An account with this username/email already exists.'});
  if(phoneKey&&(await query('SELECT 1 FROM profiles WHERE phone_key=$1',[phoneKey])).rowCount)return res.status(400).json({detail:'An account with this mobile number already exists.'});
  const client=await pool.connect();try{
@@ -69,12 +76,12 @@ app.post('/api/token/refresh',publicAsync(async(req,res)=>{
 
 // Current profile /me/
 app.get('/api/me',...auth(async(req,res)=>res.json(await profileData(req.user.id,req.user.id))));
-app.patch('/api/me',...auth(upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1}])),asyncHandler(async(req,res)=>{
+app.patch('/api/me',requireAuth,upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1}]),validatePhotoSize,asyncHandler(async(req,res)=>{
  const d=req.body,uid=req.user.id,pid=await profileId(uid);
  const userFields=['first_name','last_name'];for(const f of userFields)if(d[f]!==undefined)await query(`UPDATE users SET ${f}=$1 WHERE id=$2`,[clean(d[f]),uid]);
  if(d.email!==undefined){const email=clean(d.email).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({detail:'Enter a valid email address.'});if((await query('SELECT 1 FROM users WHERE lower(email)=lower($1) AND id<>$2',[email,uid])).rowCount)return res.status(400).json({detail:'An account with this email address already exists.'});await query('UPDATE users SET email=$1 WHERE id=$2',[email,uid]);}
  const p=(await query('SELECT * FROM profiles WHERE id=$1',[pid])).rows[0];
- const allowed=['phone','location','pincode','bio','interests'];const sets=[],vals=[];for(const f of allowed)if(d[f]!==undefined){if(f==='pincode'&&!/^[1-9][0-9]{5}$/.test(clean(d[f])))return res.status(400).json({pincode:['A 6-digit Indian PIN code is required.']});if(f==='phone'&&d[f]&&!normalizePhone(d[f]))return res.status(400).json({detail:'Enter a valid 10-digit mobile number.'});vals.push(f==='phone'?clean(d[f]):clean(d[f]));sets.push(`${f}=$${vals.length}`);}
+ const allowed=['phone','location','pincode','bio','interests'];const sets=[],vals=[];for(const f of allowed)if(d[f]!==undefined){if(f==='pincode'&&!/^[1-9][0-9]{5}$/.test(clean(d[f])))return res.status(400).json({pincode:['A 6-digit Indian PIN code is required.']});if(f==='phone'&&d[f]&&!normalizePhone(d[f]))return res.status(400).json({detail:'Enter a 10-digit mobile number starting with 6, 7, 8, or 9; no digit may appear more than 6 times.'});vals.push(f==='phone'?clean(d[f]):clean(d[f]));sets.push(`${f}=$${vals.length}`);}
  if(d.phone!==undefined){vals.push(normalizePhone(d.phone)||null);sets.push(`phone_key=$${vals.length}`);}
  if(req.files?.photo?.[0]){vals.push(`/media/${path.basename(req.files.photo[0].path)}`);sets.push(`photo=$${vals.length}`);}
  if(sets.length){vals.push(pid);await query(`UPDATE profiles SET ${sets.join(',')} WHERE id=$${vals.length}`,vals);}
@@ -252,7 +259,7 @@ app.get('*', (req, res, next) => {
 
   res.sendFile(path.join(frontendDist, 'index.html'));
 });
-app.use((err,req,res,next)=>{console.error(err);if(res.headersSent)return next(err);if(err.code==='23505')return res.status(400).json({detail:'A record with these details already exists.'});if(err.code==='23503')return res.status(400).json({detail:'Referenced record does not exist.'});res.status(500).json({detail:process.env.NODE_ENV==='production'?'Internal server error.':err.message});});
+app.use((err,req,res,next)=>{console.error(err);if(res.headersSent)return next(err);if(err instanceof multer.MulterError){const detail=err.code==='LIMIT_FILE_SIZE'?'Uploaded files must not exceed 5 MB.':err.message;return res.status(400).json({detail});}if(err.code==='23505')return res.status(400).json({detail:'A record with these details already exists.'});if(err.code==='23503')return res.status(400).json({detail:'Referenced record does not exist.'});res.status(500).json({detail:process.env.NODE_ENV==='production'?'Internal server error.':err.message});});
 const port=process.env.PORT||5000;
 await initDb();
 app.listen(port,()=>console.log(`AthleNet Node API running on http://localhost:${port}`));
