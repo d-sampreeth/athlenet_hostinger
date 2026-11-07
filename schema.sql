@@ -12,9 +12,10 @@ CREATE TABLE IF NOT EXISTS profiles (
  role VARCHAR(20) NOT NULL DEFAULT 'user' CHECK(role IN ('user','player','coach')),
  phone VARCHAR(20) DEFAULT '', phone_key VARCHAR(10) UNIQUE,
  location VARCHAR(120) DEFAULT '', pincode VARCHAR(6) DEFAULT '',
- bio TEXT DEFAULT '', interests VARCHAR(200) DEFAULT '', photo TEXT DEFAULT '',
+ bio TEXT DEFAULT '', interests TEXT DEFAULT '', photo TEXT DEFAULT '',
  created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE profiles ALTER COLUMN interests TYPE TEXT;
 CREATE TABLE IF NOT EXISTS coach_profiles (
  id BIGSERIAL PRIMARY KEY, profile_id BIGINT UNIQUE NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
  age INT, gender VARCHAR(30) DEFAULT '', sport VARCHAR(50) DEFAULT '', experience INT DEFAULT 0,
