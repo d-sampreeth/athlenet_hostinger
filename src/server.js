@@ -7,7 +7,7 @@ import { unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { initDb, pool, query } from './db.js';
 import { requireAuth, issueTokens } from './middleware/auth.js';
-import { asyncHandler, clean, validPassword, normalizePhone, userMini, profileData, postData, notify } from './utils.js';
+import { asyncHandler, clean, validPassword, validMobile, normalizePhone, userMini, profileData, postData, notify } from './utils.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
@@ -45,18 +45,20 @@ const mini=async id=>userMini(id);
 
 // Authentication: preserves the frontend's /api/auth/register and /api/auth/login contract.
 app.post('/api/auth/register',upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1},{name:'achievement_proof',maxCount:1}]),validatePhotoSize,publicAsync(async(req,res)=>{
- const d={...req.body};const email=clean(d.email).toLowerCase(),username=clean(d.username)||email,password=d.password;
+ const d={...req.body};const email=clean(d.email).toLowerCase(),password=d.password;const role=d.role||'user',username=role==='player'?email:(clean(d.username)||email),maritalStatus=clean(d.marital_status),dateOfBirth=clean(d.date_of_birth);
  if(!email||!username||!password)return res.status(400).json({detail:'Username, email and password are required.'});
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({detail:'Enter a valid email address.'});
  if(!validPassword(password))return res.status(400).json({detail:'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, and a special character.'});
- const role=d.role||'user';if(!['user','player','coach'].includes(role))return res.status(400).json({detail:'Invalid role.'});
+ if(!['Single','Married','Divorced','Prefer not to share'].includes(maritalStatus))return res.status(400).json({detail:'Select a marital status.'});
+ if(dateOfBirth){const parsed=new Date(`${dateOfBirth}T00:00:00Z`);if(!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)||Number.isNaN(parsed.valueOf())||parsed.toISOString().slice(0,10)!==dateOfBirth||dateOfBirth>new Date().toISOString().slice(0,10))return res.status(400).json({detail:'Enter a valid date of birth that is not in the future.'});}
+ if(!['user','player','coach'].includes(role))return res.status(400).json({detail:'Invalid role.'});
  const pincode=clean(d.pincode);if(!/^[1-9][0-9]{5}$/.test(pincode))return res.status(400).json({pincode:['A 6-digit Indian PIN code is required.']});
- const phone=clean(d.phone),phoneKey=normalizePhone(phone);if(phone&&!phoneKey)return res.status(400).json({detail:'Enter a 10-digit mobile number starting with 6, 7, 8, or 9; no digit may appear more than 6 times.'});
+ const phone=clean(d.phone),phoneKey=normalizePhone(phone);if(!validMobile(phone))return res.status(400).json({detail:'Enter a 10-digit mobile number starting with 6, 7, 8, or 9. Each digit can appear at most 6 times.'});
  const exists=await query('SELECT 1 FROM users WHERE username=$1 OR lower(email)=lower($2)',[username,email]);if(exists.rowCount)return res.status(400).json({detail:'An account with this username/email already exists.'});
  if(phoneKey&&(await query('SELECT 1 FROM profiles WHERE phone_key=$1',[phoneKey])).rowCount)return res.status(400).json({detail:'An account with this mobile number already exists.'});
  const client=await pool.connect();try{
  await client.query('BEGIN');const hash=await bcrypt.hash(password,12);
- const u=(await client.query('INSERT INTO users(username,email,password_hash,first_name,last_name) VALUES($1,$2,$3,$4,$5) RETURNING *',[username,email,hash,clean(d.first_name),clean(d.last_name)])).rows[0];
+ const u=(await client.query('INSERT INTO users(username,email,password_hash,first_name,last_name,date_of_birth,marital_status) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',[username,email,hash,clean(d.first_name),clean(d.last_name),dateOfBirth||null,maritalStatus])).rows[0];
  const p=(await client.query('INSERT INTO profiles(user_id,role,phone,phone_key,location,pincode,bio,interests,photo) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',[u.id,role,phone,phoneKey||null,clean(d.location),pincode,clean(d.bio),clean(d.interests),req.files?.photo?.[0]?`/media/${path.basename(req.files.photo[0].path)}`:''])).rows[0];
  if(role==='coach')await client.query('INSERT INTO coach_profiles(profile_id,age,gender,sport,experience,academy,certificate,government_recognition) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[p.id,d.age||null,clean(d.gender),clean(d.sport),Number(d.experience)||0,clean(d.academy),req.files?.certificate?.[0]?`/media/${path.basename(req.files.certificate[0].path)}`:'',clean(d.government_recognition)]);
  if(role==='player'){const pp=(await client.query('INSERT INTO player_profiles(profile_id,age,sport,level,district,state,experience,ranking,statistics) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',[p.id,d.age||null,clean(d.sport),clean(d.level),clean(d.district),clean(d.state),Number(d.experience)||0,clean(d.ranking),clean(d.statistics)])).rows[0];if(d.achievement_title)await client.query('INSERT INTO achievements(player_id,title,description,year,proof) VALUES($1,$2,$3,$4,$5)',[pp.id,clean(d.achievement_title),clean(d.achievement_description),d.achievement_year||null,req.files?.achievement_proof?.[0]?`/media/${path.basename(req.files.achievement_proof[0].path)}`:'']);}
