@@ -61,6 +61,7 @@ function ProfileEditor({ profile, onClose, onSaved }) {
         <div><label className="label" htmlFor="profile-photo">Profile photo</label><input id="profile-photo" name="photo" type="file" accept="image/*" onChange={event=>{const file=event.target.files?.[0];if(file&&file.size>1024*1024){alert('Profile photos must not exceed 1 MB.');event.target.value='';}}} className="block w-full rounded-xl border p-3 text-sm"/><p className="mt-1 text-xs text-slate-500">Maximum file size: 1 MB.</p></div>
         {player&&<section className="space-y-4 border-t pt-4"><h3 className="font-black">Player details</h3><div className="grid gap-4 md:grid-cols-2">
           <TextField label="Age" name="age" type="number" min="0" value={player.age}/>
+          <div><label className="label" htmlFor="profile-gender">Gender</label><select id="profile-gender" name="gender" defaultValue={player.gender || ''} className="input"><option value="">Select gender</option><option value="Male">Male</option><option value="Female">Female</option><option value="Other">Other</option><option value="Prefer not to say">Prefer not to say</option></select></div>
           <SportField value={player.sport}/>
           <TextField label="Experience (years)" name="experience" type="number" min="0" value={player.experience}/>
           <TextField label="Level" name="level" value={player.level}/>
