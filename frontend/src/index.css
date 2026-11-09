@@ -16,6 +16,7 @@ html{background:#f5f7fb}body{margin:0;min-width:320px}*{box-sizing:border-box}bu
 .hero{@apply flex items-center justify-between gap-8 overflow-hidden rounded-3xl bg-slate-950 p-7 text-white shadow-xl sm:p-10 xl:p-12}
 .profile-cover{@apply h-40 rounded-b-3xl bg-gradient-to-r from-slate-950 via-slate-800 to-orange-500 sm:h-52}
 }
+@media(min-width:768px){.grid>div:has(> #player-gender){grid-column:auto}}
 
 .signed-in-app{--app-canvas:#f3f6f8;--app-border:#e2e8f0;--app-ink:#172b4d;--app-muted:#64748b;min-height:100vh;background:var(--app-canvas);color:var(--app-ink)}
 .signed-in-app>header{border-color:var(--app-border);background:rgba(255,255,255,.97);box-shadow:0 1px 3px rgba(15,23,42,.06)}
