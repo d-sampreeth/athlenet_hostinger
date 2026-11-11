@@ -63,16 +63,16 @@ function ProfileEditor({ profile, onClose, onSaved }) {
           <TextField label="Age" name="age" type="number" min="0" value={player.age}/>
           <div><label className="label" htmlFor="profile-gender">Gender</label><select id="profile-gender" name="gender" defaultValue={player.gender || ''} className="input"><option value="">Select gender</option><option value="Male">Male</option><option value="Female">Female</option><option value="Other">Other</option><option value="Prefer not to say">Prefer not to say</option></select></div>
           <SportField value={player.sport}/>
-          <TextField label="Experience (years)" name="experience" type="number" min="0" value={player.experience}/>
+          <TextField label="Experience (years)" name="experience" type="number" min="0" step="1" value={player.experience || ''}/>
           <TextField label="Level" name="level" value={player.level}/>
           <TextField label="District" name="district" value={player.district}/>
           <TextField label="State" name="state" value={player.state}/>
           <TextField label="Ranking" name="ranking" value={player.ranking}/>
-        </div><div><label className="label" htmlFor="profile-statistics">Statistics</label><textarea id="profile-statistics" name="statistics" defaultValue={player.statistics || ''} className="input min-h-24"/></div></section>}
+        </div></section>}
         {coach&&<section className="space-y-4 border-t pt-4"><h3 className="font-black">Coach details</h3><div className="grid gap-4 md:grid-cols-2">
           <TextField label="Age" name="age" type="number" min="0" value={coach.age}/>
           <SportField value={coach.sport}/>
-          <TextField label="Experience (years)" name="experience" type="number" min="0" value={coach.experience}/>
+          <TextField label="Experience (years)" name="experience" type="number" min="0" step="1" value={coach.experience || ''}/>
           <TextField label="Gender" name="gender" value={coach.gender}/>
           <TextField label="Coaching academy" name="academy" value={coach.academy}/>
           <TextField label="Government recognition" name="government_recognition" value={coach.government_recognition}/>

@@ -1,6 +1,10 @@
 import { query } from './db.js';
 export const asyncHandler = fn => (req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 export const clean = v => String(v ?? '').trim();
+export function validExperience(value){
+ const text=clean(value);if(!text)return true;if(!/^\d+$/.test(text))return false;
+ const years=Number(text);return Number.isSafeInteger(years)&&years<=2147483647;
+}
 export function validPassword(p){return typeof p==='string'&&p.length>=8&&/[a-z]/.test(p)&&/[A-Z]/.test(p)&&/[^A-Za-z0-9]/.test(p);}
 export function validMobile(phone){const value=String(phone??'');return /^[6-9]\d{9}$/.test(value)&&[...value].every(digit=>value.split(digit).length-1<=6);}
 export function normalizePhone(phone){
@@ -26,7 +30,7 @@ export async function profileData(userId,viewerId=userId){
  EXISTS(SELECT 1 FROM follows WHERE follower_id=$2 AND following_id=$1) is_following`,[userId,viewerId]);
  const achievements=x.role==='player'?await query(`SELECT a.id,a.title,a.description,a.year,a.proof FROM achievements a JOIN player_profiles p ON p.id=a.player_id WHERE p.profile_id=$1 ORDER BY a.created_at`,[x.id]):{rows:[]};
  const name=`${x.first_name||''} ${x.last_name||''}`.trim()||x.username;
- return {user:{id:x.user_id,username:x.username,first_name:x.first_name,last_name:x.last_name,name},username:x.username,first_name:x.first_name,last_name:x.last_name,role:x.role,email:viewerId===userId?x.email:'',date_of_birth:viewerId===userId?x.date_of_birth:null,marital_status:viewerId===userId?x.marital_status:'',phone:x.phone,location:x.location,pincode:x.pincode,bio:x.bio,interests:x.interests,photo:x.photo,
+ return {user:{id:x.user_id,username:x.username,first_name:x.first_name,last_name:x.last_name,name},username:x.username,first_name:x.first_name,last_name:x.last_name,role:x.role,email:viewerId===userId?x.email:'',date_of_birth:viewerId===userId?x.date_of_birth:null,marital_status:viewerId===userId?x.marital_status:'',phone:viewerId===userId?x.phone:'',location:x.location,pincode:x.pincode,bio:x.bio,interests:x.interests,photo:x.photo,
  coach_details:x.role==='coach'?{age:x.coach_age,gender:x.coach_gender,sport:x.coach_sport,experience:x.coach_experience,academy:x.academy,government_recognition:x.government_recognition,verified:x.verified}:null,
  player_details:x.role==='player'?{age:x.player_age,gender:x.player_gender,sport:x.player_sport,level:x.level,district:x.district,state:x.state,experience:x.player_experience,ranking:x.ranking,statistics:x.statistics,achievements:achievements.rows}:null,
  followers_count:Number(counts.rows[0].followers_count),following_count:Number(counts.rows[0].following_count),is_following:counts.rows[0].is_following};

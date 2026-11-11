@@ -42,8 +42,8 @@ test('authenticated community feed, profile, and post interactions', { timeout: 
     )).rows[0];
     userIds.push(user.id);
     const profile = (await pool.query(
-      'INSERT INTO profiles(user_id,role,location,pincode,interests) VALUES($1,$2,$3,$4,$5) RETURNING id',
-      [user.id, role, options.location || '', options.pincode || '', options.interests || ''],
+      'INSERT INTO profiles(user_id,role,phone,location,pincode,interests) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',
+      [user.id, role, options.phone || '', options.location || '', options.pincode || '', options.interests || ''],
     )).rows[0];
     if (role === 'coach') {
       await pool.query('INSERT INTO coach_profiles(profile_id,sport) VALUES($1,$2)', [profile.id, options.sport || 'Football']);
@@ -104,7 +104,7 @@ test('authenticated community feed, profile, and post interactions', { timeout: 
     assert.ok(ready, 'Test API did not become ready.');
 
     const viewers = [
-      await createUser('coach_viewer', 'coach', { location: 'Test City', pincode: '123456', interests: 'Cricket, Basketball' }),
+      await createUser('coach_viewer', 'coach', { phone: '9876543210', location: 'Test City', pincode: '123456', interests: 'Cricket, Basketball' }),
       await createUser('player_viewer', 'player', { location: 'Test City', pincode: '123456', interests: 'Basketball', district: 'North District', state: 'Test State' }),
       await createUser('general_viewer', 'user', { location: 'Test City', pincode: '123456', interests: 'Cricket, Football' }),
     ];
@@ -236,7 +236,10 @@ test('authenticated community feed, profile, and post interactions', { timeout: 
 
     const outsiderProfile = await call(`/users/${outsider.username}/`, tokens[0]);
     assert.equal(outsiderProfile.email, '');
+    assert.equal(outsiderProfile.phone, '');
     assert.equal(outsiderProfile.is_following, false);
+    const ownProfile = await call(`/users/${viewers[0].username}/`, tokens[0]);
+    assert.equal(ownProfile.phone, '9876543210');
     const followed = await call(`/users/${outsider.username}/follow/`, tokens[0], { method: 'POST' });
     assert.equal(followed.following, true);
     assert.equal((await call(`/users/${outsider.username}/`, tokens[0])).is_following, true);

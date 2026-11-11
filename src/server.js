@@ -7,7 +7,7 @@ import { unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { initDb, pool, query } from './db.js';
 import { requireAuth, issueTokens } from './middleware/auth.js';
-import { asyncHandler, clean, validPassword, validMobile, normalizePhone, userMini, profileData, postData, notify } from './utils.js';
+import { asyncHandler, clean, validPassword, validMobile, validExperience, normalizePhone, userMini, profileData, postData, notify } from './utils.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
@@ -53,6 +53,7 @@ app.post('/api/auth/register',upload.fields([{name:'photo',maxCount:1},{name:'ce
  const gender=clean(d.gender);if(role==='player'&&!['Male','Female','Other','Prefer not to say'].includes(gender))return res.status(400).json({detail:'Select a gender.'});
  if(dateOfBirth){const parsed=new Date(`${dateOfBirth}T00:00:00Z`);if(!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)||Number.isNaN(parsed.valueOf())||parsed.toISOString().slice(0,10)!==dateOfBirth||dateOfBirth>new Date().toISOString().slice(0,10))return res.status(400).json({detail:'Enter a valid date of birth that is not in the future.'});}
  if(!['user','player','coach'].includes(role))return res.status(400).json({detail:'Invalid role.'});
+ if(d.experience!==undefined&&!validExperience(d.experience))return res.status(400).json({detail:'Experience must be a non-negative whole number.'});
  const pincode=clean(d.pincode);if(!/^[1-9][0-9]{5}$/.test(pincode))return res.status(400).json({pincode:['A 6-digit Indian PIN code is required.']});
  const phone=clean(d.phone),phoneKey=normalizePhone(phone);if(!validMobile(phone))return res.status(400).json({detail:'Enter a 10-digit mobile number starting with 6, 7, 8, or 9. Each digit can appear at most 6 times.'});
  const exists=await query('SELECT 1 FROM users WHERE username=$1 OR lower(email)=lower($2)',[username,email]);if(exists.rowCount)return res.status(400).json({detail:'An account with this username/email already exists.'});
@@ -81,6 +82,7 @@ app.post('/api/token/refresh',publicAsync(async(req,res)=>{
 app.get('/api/me',...auth(async(req,res)=>res.json(await profileData(req.user.id,req.user.id))));
 app.patch('/api/me',requireAuth,upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1}]),validatePhotoSize,asyncHandler(async(req,res)=>{
  const d=req.body,uid=req.user.id,pid=await profileId(uid);
+ if(d.experience!==undefined&&!validExperience(d.experience))return res.status(400).json({detail:'Experience must be a non-negative whole number.'});
  const userFields=['first_name','last_name'];for(const f of userFields)if(d[f]!==undefined)await query(`UPDATE users SET ${f}=$1 WHERE id=$2`,[clean(d[f]),uid]);
  if(d.email!==undefined){const email=clean(d.email).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({detail:'Enter a valid email address.'});if((await query('SELECT 1 FROM users WHERE lower(email)=lower($1) AND id<>$2',[email,uid])).rowCount)return res.status(400).json({detail:'An account with this email address already exists.'});await query('UPDATE users SET email=$1 WHERE id=$2',[email,uid]);}
  const p=(await query('SELECT * FROM profiles WHERE id=$1',[pid])).rows[0];
