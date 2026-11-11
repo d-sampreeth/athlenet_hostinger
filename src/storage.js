@@ -125,6 +125,24 @@ export async function uploadAssets(files, ownerId) {
   return { references, uploaded };
 }
 
+export async function listUserImages(ownerId) {
+  const config = getConfig();
+  const owner = String(ownerId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  if (!owner) throw new UploadError('Unable to identify the image owner.', 400);
+  const { data, error } = await getClient(config).storage.from(config.SUPABASE_MEDIA_BUCKET).list(`${owner}/image`, {
+    limit: 100,
+    sortBy: { column: 'created_at', order: 'desc' },
+  });
+  if (error) throw new UploadError('Unable to load your uploaded images.', 502);
+  return data
+    .filter(file => file.id && /\.(jpe?g|png|webp|gif)$/i.test(file.name))
+    .map(file => {
+      const objectPath = `${owner}/image/${file.name}`;
+      const { data: publicData } = getClient(config).storage.from(config.SUPABASE_MEDIA_BUCKET).getPublicUrl(objectPath);
+      return { name: file.name, created_at: file.created_at, url: publicData.publicUrl };
+    });
+}
+
 export async function removeStoredAssets(assets) {
   if (!assets.length) return;
   const config = getConfig();

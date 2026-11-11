@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { initDb, pool, query } from './db.js';
 import { requireAuth, issueTokens } from './middleware/auth.js';
 import { asyncHandler, clean, validPassword, validMobile, validExperience, normalizePhone, userMini, profileData, postData, notify } from './utils.js';
-import { removeStoredAssets, resolveMediaReference, UploadError, uploadAssets, validateUploadFile } from './storage.js';
+import { listUserImages, removeStoredAssets, resolveMediaReference, UploadError, uploadAssets, validateUploadFile } from './storage.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
@@ -89,6 +89,7 @@ app.post('/api/token/refresh',publicAsync(async(req,res)=>{
 
 // Current profile /me/
 app.get('/api/me',...auth(async(req,res)=>res.json(await profileData(req.user.id,req.user.id))));
+app.get('/api/me/media',...auth(async(req,res)=>res.json(await listUserImages(req.user.id))));
 app.patch('/api/me',requireAuth,upload.fields([{name:'photo',maxCount:1},{name:'cover_image',maxCount:1},{name:'certificate',maxCount:1}]),validateUploadedFiles,asyncHandler(async(req,res)=>{
  const d=req.body,uid=req.user.id,pid=await profileId(uid);
  if(d.experience!==undefined&&!validExperience(d.experience))return res.status(400).json({detail:'Experience must be a non-negative whole number.'});

@@ -75,6 +75,8 @@ Never put the service-role key in frontend environment variables or commit it. T
 
 New database references are permanent Supabase public URLs for media and `supabase-storage://` object references for private documents. API responses also normalize `supabase-storage://athlenet-media/...` references into public URLs for post images, author/profile photos, profile covers, and opportunity images. Public image URLs do not expire; signed URLs are reserved for owner-authorized private documents. Profile-cover and opportunity image references use additive nullable/defaulted columns; startup applies the schema additions without altering existing rows. Existing `/media/...` references remain supported while their original files are available. The migration utility is dry-run by default; before applying it, make a database backup and ensure the original `uploads` directory is present on the same host as the target database:
 
+The authenticated `GET /api/me/media/` endpoint lists the signed-in user's public post images from their own `<user-id>/image` storage folder. The profile's “Your uploaded images” gallery uses this endpoint; the service-role key remains on the backend, and users cannot list another account's folder.
+
 ```powershell
 npm run migrate:uploads
 npm run migrate:uploads -- --apply
