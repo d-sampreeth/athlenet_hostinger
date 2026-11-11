@@ -27,7 +27,7 @@ function ProfileEditor({ profile, onClose, onSaved }) {
     }
     setSaving(true);
     const data = new FormData(event.currentTarget);
-    for (const name of ['photo', 'certificate']) {
+    for (const name of ['photo', 'cover_image', 'certificate']) {
       const file = data.get(name);
       if (!(file instanceof File) || !file.name) data.delete(name);
     }
@@ -58,7 +58,10 @@ function ProfileEditor({ profile, onClose, onSaved }) {
           <TextField label="Interests (comma-separated sports)" name="interests" value={profile.interests}/>
         </div>
         <div><label className="label" htmlFor="profile-bio">Bio</label><textarea id="profile-bio" name="bio" defaultValue={profile.bio || ''} className="input min-h-28"/></div>
-        <div><label className="label" htmlFor="profile-photo">Profile photo</label><input id="profile-photo" name="photo" type="file" accept="image/*" onChange={event=>{const file=event.target.files?.[0];if(file&&file.size>1024*1024){alert('Profile photos must not exceed 1 MB.');event.target.value='';}}} className="block w-full rounded-xl border p-3 text-sm"/><p className="mt-1 text-xs text-slate-500">Maximum file size: 1 MB.</p></div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div><label className="label" htmlFor="profile-photo">Profile photo</label><input id="profile-photo" name="photo" type="file" accept=".jpg,.jpeg,.png,.gif,.webp" onChange={event=>{const file=event.target.files?.[0];if(file&&file.size>1024*1024){alert('Profile photos must not exceed 1 MB.');event.target.value='';}}} className="block w-full rounded-xl border p-3 text-sm"/><p className="mt-1 text-xs text-slate-500">Maximum file size: 1 MB.</p></div>
+          <div><label className="label" htmlFor="profile-cover-image">Profile cover image</label><input id="profile-cover-image" name="cover_image" type="file" accept=".jpg,.jpeg,.png,.gif,.webp" onChange={event=>{const file=event.target.files?.[0];if(file&&file.size>5*1024*1024){alert('Cover images must not exceed 5 MB.');event.target.value='';}}} className="block w-full rounded-xl border p-3 text-sm"/><p className="mt-1 text-xs text-slate-500">Optional; maximum file size: 5 MB.</p></div>
+        </div>
         {player&&<section className="space-y-4 border-t pt-4"><h3 className="font-black">Player details</h3><div className="grid gap-4 md:grid-cols-2">
           <TextField label="Age" name="age" type="number" min="0" value={player.age}/>
           <div><label className="label" htmlFor="profile-gender">Gender</label><select id="profile-gender" name="gender" defaultValue={player.gender || ''} className="input"><option value="">Select gender</option><option value="Male">Male</option><option value="Female">Female</option><option value="Other">Other</option><option value="Prefer not to say">Prefer not to say</option></select></div>

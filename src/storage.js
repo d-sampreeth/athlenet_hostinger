@@ -64,14 +64,15 @@ export function validateUploadFile(file, fieldName) {
     throw new UploadError('Profile photos must not exceed 1 MB.');
   }
   const detected = detectFileType(file.buffer);
-  if (!detected || (fieldName === 'image' && detected.mimeType === PDF_TYPE.mimeType)) {
+  const imageField = ['photo', 'cover_image', 'image'].includes(fieldName);
+  if (!detected || (imageField && !IMAGE_TYPES.has(detected.mimeType))) {
     throw new UploadError('Upload a valid JPEG, PNG, GIF, or WebP image; PDF files are only accepted for documents.');
   }
   if (['certificate', 'achievement_proof'].includes(fieldName)
     && !DOCUMENT_IMAGE_TYPES.has(detected.mimeType) && detected.mimeType !== PDF_TYPE.mimeType) {
     throw new UploadError('Upload a JPEG, PNG, or WebP image, or a PDF document.');
   }
-  if (!['photo', 'image', 'certificate', 'achievement_proof'].includes(fieldName)) {
+  if (!['photo', 'cover_image', 'image', 'certificate', 'achievement_proof'].includes(fieldName)) {
     throw new UploadError('This upload field is not supported.');
   }
   return detected;
@@ -152,4 +153,9 @@ export async function resolveStoredReference(reference) {
   const { data, error } = await getClient(config).storage.from(bucket).createSignedUrl(objectPath, SIGNED_URL_SECONDS);
   if (error || !data?.signedUrl) throw new UploadError('Unable to retrieve a stored document.', 502);
   return data.signedUrl;
+}
+
+export async function resolvePrivateReference(reference, ownerId, viewerId) {
+  if (ownerId == null || viewerId == null || String(ownerId) !== String(viewerId)) return '';
+  return resolveStoredReference(reference);
 }

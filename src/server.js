@@ -89,7 +89,7 @@ app.post('/api/token/refresh',publicAsync(async(req,res)=>{
 
 // Current profile /me/
 app.get('/api/me',...auth(async(req,res)=>res.json(await profileData(req.user.id,req.user.id))));
-app.patch('/api/me',requireAuth,upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1}]),validateUploadedFiles,asyncHandler(async(req,res)=>{
+app.patch('/api/me',requireAuth,upload.fields([{name:'photo',maxCount:1},{name:'cover_image',maxCount:1},{name:'certificate',maxCount:1}]),validateUploadedFiles,asyncHandler(async(req,res)=>{
  const d=req.body,uid=req.user.id,pid=await profileId(uid);
  if(d.experience!==undefined&&!validExperience(d.experience))return res.status(400).json({detail:'Experience must be a non-negative whole number.'});
  const userFields=['first_name','last_name'];for(const f of userFields)if(d[f]!==undefined)await query(`UPDATE users SET ${f}=$1 WHERE id=$2`,[clean(d[f]),uid]);
@@ -99,9 +99,10 @@ app.patch('/api/me',requireAuth,upload.fields([{name:'photo',maxCount:1},{name:'
  if(d.phone!==undefined){vals.push(normalizePhone(d.phone)||null);sets.push(`phone_key=$${vals.length}`);}
  const detailTable=p.role==='coach'?'coach_profiles':p.role==='player'?'player_profiles':null;
  const detail=detailTable?(await query(`SELECT * FROM ${detailTable} WHERE profile_id=$1`,[pid])).rows[0]:null;
- const {references,uploaded}=await uploadAssets({photo:req.files?.photo?.[0],certificate:p.role==='coach'?req.files?.certificate?.[0]:undefined},uid);
+ const {references,uploaded}=await uploadAssets({photo:req.files?.photo?.[0],cover_image:req.files?.cover_image?.[0],certificate:p.role==='coach'?req.files?.certificate?.[0]:undefined},uid);
  try {
   if(references.photo){vals.push(references.photo);sets.push(`photo=$${vals.length}`);}
+  if(references.cover_image){vals.push(references.cover_image);sets.push(`cover_image=$${vals.length}`);}
   if(sets.length){vals.push(pid);await query(`UPDATE profiles SET ${sets.join(',')} WHERE id=$${vals.length}`,vals);}
   if(detailTable){const fields=detailTable==='coach_profiles'?['age','gender','sport','experience','academy','government_recognition']:['age','gender','sport','experience','level','district','state','ranking','statistics'];const ds=[],dv=[];for(const f of fields)if(d[f]!==undefined){dv.push(f==='age'||f==='experience'?(Number(d[f])||null):clean(d[f]));ds.push(`${f}=$${dv.length}`);}if(detailTable==='coach_profiles'&&references.certificate){dv.push(references.certificate);ds.push(`certificate=$${dv.length}`);}if(ds.length){dv.push(detail.id);await query(`UPDATE ${detailTable} SET ${ds.join(',')} WHERE id=$${dv.length}`,dv);}}
  } catch(error) {
@@ -139,10 +140,17 @@ app.get('/api/opportunities',...auth(async(req,res)=>{
  if(req.query.q){vals.push(`%${req.query.q}%`);sql+=` AND (o.title ILIKE $${vals.length} OR o.description ILIKE $${vals.length} OR o.sport ILIKE $${vals.length} OR o.location ILIKE $${vals.length} OR o.eligibility ILIKE $${vals.length})`;}
  sql+=' ORDER BY o.created_at DESC';const r=await query(sql,vals);res.json(r.rows.map(o=>({...o,coach_name:`${o.first_name||''} ${o.last_name||''}`.trim()||o.username,coach_verified:o.verified})));
 }));
-app.post('/api/opportunities',...auth(async(req,res)=>{
+app.post('/api/opportunities',...auth(upload.single('image')),validateUploadedFiles,asyncHandler(async(req,res)=>{
  const cp=(await query('SELECT id FROM coach_profiles WHERE profile_id=(SELECT id FROM profiles WHERE user_id=$1)',[req.user.id])).rows[0];if(!cp)return res.status(403).json({detail:'Only coaches can create opportunities.'});
  const d=req.body;if(!d.title||!d.description||!d.sport||!d.location||!d.event_date||!d.last_date)return res.status(400).json({detail:'Please provide all required opportunity fields.'});
- const r=await query(`INSERT INTO opportunities(coach_id,title,description,sport,location,event_date,last_date,eligibility,slots) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,[cp.id,d.title,d.description,d.sport,d.location,d.event_date,d.last_date,d.eligibility||'',Number(d.slots)||20]);res.status(201).json(r.rows[0]);
+ const {references,uploaded}=await uploadAssets({image:req.file},req.user.id);
+ try {
+  const r=await query(`INSERT INTO opportunities(coach_id,title,description,sport,location,event_date,last_date,eligibility,slots,image) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[cp.id,d.title,d.description,d.sport,d.location,d.event_date,d.last_date,d.eligibility||'',Number(d.slots)||20,references.image||'']);
+  res.status(201).json(r.rows[0]);
+ } catch(error) {
+  try { await removeStoredAssets(uploaded); } catch(cleanupError) { console.error('Failed to clean up opportunity uploads.',cleanupError); }
+  throw error;
+ }
 }));
 app.get('/api/opportunities/:id',...auth(async(req,res)=>{const r=await query(`SELECT o.*,cp.verified,u.username,(SELECT COUNT(*) FROM opportunity_applications a WHERE a.opportunity_id=o.id) application_count FROM opportunities o JOIN coach_profiles cp ON cp.id=o.coach_id JOIN profiles p ON p.id=cp.profile_id JOIN users u ON u.id=p.user_id WHERE o.id=$1`,[req.params.id]);if(!r.rowCount)return res.status(404).json({detail:'Not found.'});res.json(r.rows[0]);}));
 app.post('/api/opportunities/:id',...auth(async(req,res)=>{

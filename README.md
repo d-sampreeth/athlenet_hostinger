@@ -71,9 +71,9 @@ SUPABASE_MEDIA_BUCKET=athlenet-media
 SUPABASE_DOCUMENTS_BUCKET=athlenet-documents
 ```
 
-Never put the service-role key in frontend environment variables or commit it. The media bucket must allow public reads for profile and post images. The documents bucket can remain private; the API issues short-lived signed URLs for stored certificates and achievement proofs. Profile/post images accept JPEG, PNG, GIF, or WebP; documents accept JPEG, PNG, WebP, or PDF. Profile photos are limited to 1 MB, and all files to 5 MB.
+Never put the service-role key in frontend environment variables or commit it. The media bucket must allow public reads for profile photos, profile covers, post images, and opportunity images. The documents bucket can remain private; the API issues short-lived signed URLs for stored certificates and achievement proofs only to the document owner's profile response. Profile, cover, post, and opportunity images accept JPEG, PNG, GIF, or WebP; documents accept JPEG, PNG, WebP, or PDF. Profile photos are limited to 1 MB, and all files to 5 MB.
 
-New database references are permanent Supabase URLs for media and `supabase-storage://` object references for private documents. Existing `/media/...` references remain supported while their original files are available. The migration utility is dry-run by default; before applying it, make a database backup and ensure the original `uploads` directory is present on the same host as the target database:
+New database references are permanent Supabase URLs for media and `supabase-storage://` object references for private documents. Profile-cover and opportunity image references use additive nullable/defaulted columns; startup applies the schema additions without altering existing rows. Existing `/media/...` references remain supported while their original files are available. The migration utility is dry-run by default; before applying it, make a database backup and ensure the original `uploads` directory is present on the same host as the target database:
 
 ```powershell
 npm run migrate:uploads

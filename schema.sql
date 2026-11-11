@@ -12,10 +12,11 @@ CREATE TABLE IF NOT EXISTS profiles (
  role VARCHAR(20) NOT NULL DEFAULT 'user' CHECK(role IN ('user','player','coach')),
  phone VARCHAR(20) DEFAULT '', phone_key VARCHAR(10) UNIQUE,
  location VARCHAR(120) DEFAULT '', pincode VARCHAR(6) DEFAULT '',
- bio TEXT DEFAULT '', interests TEXT DEFAULT '', photo TEXT DEFAULT '',
+ bio TEXT DEFAULT '', interests TEXT DEFAULT '', photo TEXT DEFAULT '', cover_image TEXT DEFAULT '',
  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ALTER TABLE profiles ALTER COLUMN interests TYPE TEXT;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS cover_image TEXT DEFAULT '';
 CREATE TABLE IF NOT EXISTS coach_profiles (
  id BIGSERIAL PRIMARY KEY, profile_id BIGINT UNIQUE NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
  age INT, gender VARCHAR(30) DEFAULT '', sport VARCHAR(50) DEFAULT '', experience INT DEFAULT 0,
@@ -36,8 +37,9 @@ CREATE TABLE IF NOT EXISTS opportunities (
  id BIGSERIAL PRIMARY KEY, coach_id BIGINT NOT NULL REFERENCES coach_profiles(id) ON DELETE CASCADE,
  title VARCHAR(180) NOT NULL, description TEXT NOT NULL, sport VARCHAR(50) NOT NULL, location VARCHAR(150) NOT NULL,
  event_date DATE NOT NULL, last_date DATE NOT NULL, eligibility TEXT DEFAULT '', slots INT DEFAULT 20,
- created_at TIMESTAMPTZ DEFAULT NOW(), active BOOLEAN DEFAULT TRUE
+ created_at TIMESTAMPTZ DEFAULT NOW(), active BOOLEAN DEFAULT TRUE, image TEXT DEFAULT ''
 );
+ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS image TEXT DEFAULT '';
 CREATE TABLE IF NOT EXISTS opportunity_applications (
  id BIGSERIAL PRIMARY KEY, opportunity_id BIGINT NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
  player_id BIGINT NOT NULL REFERENCES player_profiles(id) ON DELETE CASCADE, message TEXT DEFAULT '',

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { detectFileType, resolveStoredReference, validateUploadFile } from '../src/storage.js';
+import { detectFileType, resolvePrivateReference, resolveStoredReference, validateUploadFile } from '../src/storage.js';
 
 const signatures = {
   jpeg: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
@@ -21,9 +21,18 @@ test('detects supported uploaded file formats from their contents', () => {
 
 test('accepts supported images and documents only in appropriate fields', () => {
   assert.equal(validateUploadFile({ buffer: signatures.png, size: signatures.png.length }, 'photo').extension, 'png');
+  assert.equal(validateUploadFile({ buffer: signatures.png, size: signatures.png.length }, 'cover_image').extension, 'png');
   assert.equal(validateUploadFile({ buffer: signatures.pdf, size: signatures.pdf.length }, 'certificate').extension, 'pdf');
   assert.throws(
     () => validateUploadFile({ buffer: signatures.pdf, size: signatures.pdf.length }, 'image'),
+    /valid JPEG, PNG, GIF, or WebP image/,
+  );
+  assert.throws(
+    () => validateUploadFile({ buffer: signatures.pdf, size: signatures.pdf.length }, 'cover_image'),
+    /valid JPEG, PNG, GIF, or WebP image/,
+  );
+  assert.throws(
+    () => validateUploadFile({ buffer: signatures.pdf, size: signatures.pdf.length }, 'photo'),
     /valid JPEG, PNG, GIF, or WebP image/,
   );
   assert.throws(
@@ -52,4 +61,20 @@ test('preserves existing local and public URLs', async () => {
   const publicReference = 'https://project.supabase.co/storage/v1/object/public/athlenet-media/image.png';
   assert.equal(await resolveStoredReference(legacyReference), legacyReference);
   assert.equal(await resolveStoredReference(publicReference), publicReference);
+});
+
+test('does not resolve private document URLs for anyone except the owner', async () => {
+  const privateReference = 'supabase-storage://athlenet-documents/42/certificate/document.pdf';
+  assert.equal(await resolvePrivateReference(privateReference, 42, 43), '');
+  const configNames = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_MEDIA_BUCKET', 'SUPABASE_DOCUMENTS_BUCKET'];
+  const previous = Object.fromEntries(configNames.map(name => [name, process.env[name]]));
+  try {
+    for (const name of configNames) delete process.env[name];
+    await assert.rejects(resolvePrivateReference(privateReference, 42, '42'), error => error.status === 503);
+  } finally {
+    for (const name of configNames) {
+      if (previous[name] === undefined) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+  }
 });

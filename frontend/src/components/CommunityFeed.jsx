@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { API, API_ORIGIN } from '../api';
+import { API } from '../api';
 import PostActions from './PostActions';
+import PersistentImage from './PersistentImage';
 
 const TABS = [
   { key: 'all', label: 'All' },
@@ -105,7 +106,6 @@ export default function CommunityFeed({ currentUserId, hasPincode }) {
       <div className="space-y-4">
         {posts.map((p) => {
           const name = authorName(p);
-          const img = p.image ? new URL(p.image, API_ORIGIN).href : null;
           const author = p.author;
           return (
             <article key={p.id} className="rounded-2xl border border-slate-200 bg-white">
@@ -113,7 +113,7 @@ export default function CommunityFeed({ currentUserId, hasPincode }) {
                 {author?.username ? (
                   <Link to={`/profile/${author.username}`} aria-label={`View ${name}'s profile`}>
                     {author.photo
-                      ? <img src={new URL(author.photo, API_ORIGIN).href} alt="" className="h-10 w-10 rounded-full object-cover" />
+                      ? <PersistentImage src={author.photo} alt={name} className="h-10 w-10 rounded-full object-cover" />
                       : <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100 font-bold text-orange-600">{name.charAt(0).toUpperCase()}</div>}
                   </Link>
                 ) : <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100 font-bold text-orange-600">{name.charAt(0).toUpperCase()}</div>}
@@ -129,7 +129,7 @@ export default function CommunityFeed({ currentUserId, hasPincode }) {
               </div>
 
               <p className="whitespace-pre-line px-5 pb-3 text-slate-800">{p.content}</p>
-              {img && <img src={img} alt="" className="w-full object-cover" />}
+              {p.image && <PersistentImage src={p.image} alt="Post attachment" className="w-full object-cover" />}
 
               {p.reasons && p.reasons.length > 0 && (
                 <div className="flex flex-wrap gap-2 px-5 pb-3">

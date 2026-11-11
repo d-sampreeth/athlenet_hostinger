@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CalendarDays, MapPin, RefreshCw, Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { API, API_ORIGIN } from '../api';
+import { API } from '../api';
 import PostActions from './PostActions';
+import PersistentImage from './PersistentImage';
 
 function PostCard({ post, currentUserId, onDeleted }) {
   const author = post.author;
-  const image = post.image ? new URL(post.image, API_ORIGIN).href : null;
 
   return (
     <article className="card overflow-hidden">
@@ -23,7 +23,7 @@ function PostCard({ post, currentUserId, onDeleted }) {
           </div>
         </div>
       </div>
-      {image && <img src={image} alt="" className="max-h-80 w-full object-cover" />}
+      {post.image && <PersistentImage src={post.image} alt="Post attachment" className="max-h-80 w-full object-cover" />}
       <p className="whitespace-pre-line px-5 pb-4 text-sm leading-6 text-slate-700">{post.content}</p>
       <PostActions post={post} currentUserId={currentUserId} onDeleted={onDeleted} />
     </article>
@@ -33,6 +33,7 @@ function PostCard({ post, currentUserId, onDeleted }) {
 function OpportunityCard({ opportunity }) {
   return (
     <article className="card p-5">
+      {opportunity.image && <PersistentImage src={opportunity.image} alt={`${opportunity.title} opportunity`} className="mb-4 w-full rounded-xl object-cover" />}
       <div className="flex items-center justify-between gap-3">
         <span className="pill">{opportunity.sport}</span>
         {opportunity.coach_verified && <span className="text-xs font-bold text-emerald-700">Verified coach</span>}
