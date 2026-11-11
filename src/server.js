@@ -174,7 +174,23 @@ app.post('/api/posts',...auth(upload.single('image')),validateUploadedFiles,asyn
  catch(error) { try { await removeStoredAssets(uploaded); } catch(cleanupError) { console.error('Failed to clean up post upload.',cleanupError); } throw error; }
  res.status(201).json(await postData(postId,req.user.id));
 }));
-app.delete('/api/posts/:id',...auth(async(req,res)=>{const r=await query('DELETE FROM posts WHERE id=$1 AND author_id=$2',[req.params.id,req.user.id]);if(!r.rowCount)return res.status(404).json({detail:'Post not found or not yours.'});res.status(204).end();}));
+app.delete('/api/posts/:id',...auth(async(req,res)=>{
+ const client=await pool.connect();let transactionStarted=false,committed=false;
+ try{
+  await client.query('BEGIN');transactionStarted=true;
+  const post=await client.query('SELECT id FROM posts WHERE id=$1 AND author_id=$2 FOR UPDATE',[req.params.id,req.user.id]);
+  if(!post.rowCount){await client.query('ROLLBACK');transactionStarted=false;return res.status(404).json({detail:'Post not found or not yours.'});}
+  await client.query('DELETE FROM comments WHERE post_id=$1',[req.params.id]);
+  await client.query('DELETE FROM likes WHERE post_id=$1',[req.params.id]);
+  await client.query('DELETE FROM notifications WHERE link=$1',[`/posts/${req.params.id}`]);
+  await client.query('DELETE FROM posts WHERE id=$1',[req.params.id]);
+  await client.query('COMMIT');committed=true;
+  res.status(204).end();
+ }catch(error){
+  if(!committed&&transactionStarted){try{await client.query('ROLLBACK');}catch(rollbackError){console.error('Failed to roll back post deletion.',rollbackError);}}
+  throw error;
+ }finally{client.release();}
+}));
 app.post('/api/posts/:id/like',...auth(async(req,res)=>{
  const post=(await query('SELECT author_id FROM posts WHERE id=$1',[req.params.id])).rows[0];if(!post)return res.status(404).json({detail:'Post not found.'});
  const found=await query('SELECT id FROM likes WHERE post_id=$1 AND user_id=$2',[req.params.id,req.user.id]);let liked;

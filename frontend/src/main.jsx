@@ -198,8 +198,39 @@ function Layout() {
   const nav = useNavigate(); const loc = useLocation();
   const mainRef = useRef(null);
   const [mobile, setMobile] = useState(false); const [q, setQ] = useState('');
+  const [userSuggestions, setUserSuggestions] = useState([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState('');
   const [notifications, setNotifications] = useState(0);
   useEffect(() => { API.get('/notifications/').then(r => setNotifications(r.data.filter(n => !n.read).length)).catch(() => {}); }, [loc.pathname]);
+  useEffect(() => {
+    const value = q.trim().replace(/^@/, '');
+    setUserSuggestions([]);
+    setSuggestionsError('');
+    if (!value) {
+      setSuggestionsLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setSuggestionsLoading(true);
+    const timer = window.setTimeout(() => {
+      API.get('/users/', { params: { q: value } })
+        .then(response => {
+          if (!cancelled) setUserSuggestions(response.data);
+        })
+        .catch(() => {
+          if (!cancelled) setSuggestionsError('Could not load user suggestions.');
+        })
+        .finally(() => {
+          if (!cancelled) setSuggestionsLoading(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [q]);
   useEffect(() => {
     const main = mainRef.current;
     if (!main) return;
@@ -240,7 +271,39 @@ function Layout() {
       main.removeAttribute('data-scroll-reveal-ready');
     };
   }, [loc.pathname]);
-  const doSearch = () => { const value = q.trim(); if (value) nav(`/search?q=${encodeURIComponent(value)}`); };
+  const doSearch = () => {
+    const value = q.trim();
+    if (value) {
+      setUserSuggestions([]);
+      setSuggestionsError('');
+      nav(`/search?q=${encodeURIComponent(value)}`);
+    }
+  };
+  const searchSuggestions = () => {
+    if (loc.pathname !== '/' || !q.trim()) return null;
+    return <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+      {suggestionsLoading && <p className="px-3 py-2 text-sm text-slate-500">Searching people...</p>}
+      {suggestionsError && <p role="alert" className="px-3 py-2 text-sm text-red-600">{suggestionsError}</p>}
+      {!suggestionsLoading && !suggestionsError && userSuggestions.map(member => {
+        const name = member.user?.name || member.user?.username || 'Member';
+        return <Link
+          key={member.user.id}
+          to={`/profile/${member.user.username}`}
+          onClick={() => { setQ(''); setUserSuggestions([]); setMobile(false); }}
+          className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-orange-50"
+        >
+          <Avatar src={member.photo} name={name} size="h-9 w-9" />
+          <span className="min-w-0">
+            <b className="block truncate text-sm text-slate-800">{name}</b>
+            <span className="block truncate text-xs text-slate-500">@{member.user.username}</span>
+          </span>
+        </Link>;
+      })}
+      {!suggestionsLoading && !suggestionsError && userSuggestions.length === 0 && (
+        <p className="px-3 py-2 text-sm text-slate-500">No matching users found.</p>
+      )}
+    </div>;
+  };
   const items = [['/','Home',Home],['/opportunities','Opportunities',Target],['/connections','Connections',UserPlus],['/create','Create Post',Plus],['/news','Local Hub',Users],['/profile','Profile',CircleUserRound]];
   const topNavItems = [['/','Home',Home],['/news','Local Hub',Users],['/connections','Connections',UserPlus],['/opportunities','Opportunities',Target],['/create','Create',Plus],['/chat','Messaging',MessageCircle],['/notifications','Notifications',Bell]];
   const displayName = user?.user?.name || user?.user?.username || 'athlete';
@@ -256,7 +319,7 @@ function Layout() {
           <img src="/athlenet-nav-mark.png" alt="" className="h-10 w-10 object-contain"/>
           <img src="/athlenet-nav-wordmark.png" alt="Athlenet" className="w-[90px] object-contain sm:w-[128px]"/>
         </Link>
-        <div className="ml-2 hidden min-w-0 flex-1 xl:flex"><div className="relative flex w-full max-w-[300px] items-center"><Search className="absolute left-3 h-5 w-5 text-slate-400"/><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch()} placeholder="Search Athlenet" className="input h-10 pl-10 pr-20"/><button onClick={doSearch} className="absolute right-1.5 top-1.5 h-7 rounded-lg bg-orange-500 px-3 text-xs font-bold text-white hover:bg-orange-600">Search</button></div></div>
+        <div className="ml-2 hidden min-w-0 flex-1 xl:flex"><div className="relative flex w-full max-w-[300px] items-center"><Search className="absolute left-3 h-5 w-5 text-slate-400"/><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch()} placeholder="Search Athlenet" className="input h-10 pl-10 pr-20"/><button onClick={doSearch} className="absolute right-1.5 top-1.5 h-7 rounded-lg bg-orange-500 px-3 text-xs font-bold text-white hover:bg-orange-600">Search</button>{searchSuggestions()}</div></div>
         <nav aria-label="Main navigation" className="ml-auto hidden h-full items-stretch lg:flex">
           {topNavItems.map(([to,label,I])=><Link key={to} to={to} aria-current={loc.pathname===to?'page':undefined} className={`relative flex min-w-[68px] flex-col items-center justify-center gap-1 px-2 text-[10px] font-semibold transition hover:text-orange-600 xl:min-w-[76px] xl:px-3 xl:text-[11px] ${loc.pathname===to?'text-orange-600 after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-t-full after:bg-orange-500':'text-slate-500'}`}>
             <span className="relative"><I size={20}/>{to==='/notifications'&&notifications>0&&<span className="absolute -right-2 -top-1 min-w-4 rounded-full bg-orange-500 px-1 text-center text-[9px] font-black text-white">{notifications}</span>}</span>
@@ -269,7 +332,7 @@ function Layout() {
           <button onClick={logout} title="Sign out" aria-label="Sign out" className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"><LogOut size={18}/></button>
         </div>
       </div>
-      <div className="border-t border-slate-100 px-4 py-2 xl:hidden"><div className="relative"><Search className="absolute left-3 top-2.5 h-5 w-5 text-slate-400"/><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch()} placeholder="Search players, coaches, sports..." className="input h-10 pl-10 pr-20"/><button onClick={doSearch} className="absolute right-1 top-1 h-8 rounded-lg bg-orange-500 px-3 text-xs font-bold text-white">Search</button></div></div>
+      <div className="border-t border-slate-100 px-4 py-2 xl:hidden"><div className="relative"><Search className="absolute left-3 top-2.5 h-5 w-5 text-slate-400"/><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doSearch()} placeholder="Search players, coaches, sports..." className="input h-10 pl-10 pr-20"/><button onClick={doSearch} className="absolute right-1 top-1 h-8 rounded-lg bg-orange-500 px-3 text-xs font-bold text-white">Search</button>{searchSuggestions()}</div></div>
     </header>
     <div className="flex w-full">
       <aside className={`${mobile?'translate-x-0':'-translate-x-full'} fixed inset-y-[76px] left-0 z-40 w-72 overflow-y-auto border-r border-slate-200 bg-white p-4 transition-transform lg:sticky lg:top-[76px] lg:h-[calc(100vh-76px)] lg:w-64 lg:translate-x-0 lg:shrink-0`}>

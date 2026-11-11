@@ -238,6 +238,8 @@ test('authenticated community feed, profile, and post interactions', { timeout: 
     assert.equal(outsiderProfile.email, '');
     assert.equal(outsiderProfile.phone, '');
     assert.equal(outsiderProfile.is_following, false);
+    const userSuggestions = await call(`/users/?q=${encodeURIComponent(outsider.username)}`, tokens[0]);
+    assert.ok(userSuggestions.some(member => member.user.username === outsider.username));
     const ownProfile = await call(`/users/${viewers[0].username}/`, tokens[0]);
     assert.equal(ownProfile.phone, '9876543210');
     const followed = await call(`/users/${outsider.username}/follow/`, tokens[0], { method: 'POST' });
@@ -253,6 +255,16 @@ test('authenticated community feed, profile, and post interactions', { timeout: 
     const firstPage = await call('/feed/?source=all&page=1&limit=2', tokens[0]);
     const secondPage = await call('/feed/?source=all&page=2&limit=2', tokens[0]);
     assert.equal(new Set([...firstPage.results, ...secondPage.results].map(post => String(post.id))).size, 4);
+
+    await call(`/posts/${published.id}/comments/`, tokens[1], { method: 'POST', body: { text: `${prefix} deletion comment` } });
+    await call(`/posts/${published.id}/like/`, tokens[1], { method: 'POST' });
+    await call(`/posts/${published.id}/`, tokens[0], { method: 'DELETE' });
+    assert.equal((await pool.query('SELECT 1 FROM posts WHERE id=$1', [published.id])).rowCount, 0);
+    assert.equal((await pool.query('SELECT 1 FROM comments WHERE post_id=$1', [published.id])).rowCount, 0);
+    assert.equal((await pool.query('SELECT 1 FROM likes WHERE post_id=$1', [published.id])).rowCount, 0);
+    assert.equal((await pool.query('SELECT 1 FROM notifications WHERE link=$1', [`/posts/${published.id}`])).rowCount, 0);
+    const afterDelete = await call('/posts/', tokens[1]);
+    assert.ok(afterDelete.every(post => String(post.id) !== String(published.id)));
   } finally {
     if (userIds.length) await pool.query('DELETE FROM users WHERE id=ANY($1::bigint[])', [userIds]);
     if (child && child.exitCode === null) {
