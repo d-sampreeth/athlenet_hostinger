@@ -16,6 +16,8 @@ const app=express();
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const uploadDir=path.resolve(__dirname,'../uploads');
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:5*1024*1024,files:3}});
+const imageSources=["'self'",'data:','https://images.unsplash.com'];
+if(process.env.SUPABASE_URL)imageSources.push(new URL(process.env.SUPABASE_URL).origin);
 const validateUploadedFiles=(req,res,next)=>{
  const files=req.file?[req.file]:Object.values(req.files||{}).flat();
  try {
@@ -26,7 +28,7 @@ const validateUploadedFiles=(req,res,next)=>{
  }
 };
 const origins=(process.env.FRONTEND_ORIGINS||'http://localhost:5173').split(',').map(x=>x.trim());
-app.use(helmet({crossOriginResourcePolicy:{policy:'cross-origin'}}));
+app.use(helmet({contentSecurityPolicy:{directives:{imgSrc:imageSources}},crossOriginResourcePolicy:{policy:'cross-origin'}}));
 app.use(cors({origin:(origin,cb)=>!origin||origins.includes('*')||origins.includes(origin)?cb(null,true):cb(new Error('Origin not allowed by CORS')),credentials:true}));
 app.use(express.json({limit:'2mb'}));app.use(express.urlencoded({extended:true}));
 app.use('/media',express.static(uploadDir));
