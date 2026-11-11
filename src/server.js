@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { initDb, pool, query } from './db.js';
 import { requireAuth, issueTokens } from './middleware/auth.js';
 import { asyncHandler, clean, validPassword, validMobile, validExperience, normalizePhone, userMini, profileData, postData, notify } from './utils.js';
-import { removeStoredAssets, UploadError, uploadAssets, validateUploadFile } from './storage.js';
+import { removeStoredAssets, resolveMediaReference, UploadError, uploadAssets, validateUploadFile } from './storage.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
@@ -138,7 +138,7 @@ app.get('/api/opportunities',...auth(async(req,res)=>{
  FROM opportunities o JOIN coach_profiles cp ON cp.id=o.coach_id JOIN profiles p ON p.id=cp.profile_id JOIN users u ON u.id=p.user_id WHERE o.active=true`;
  const vals=[req.user.id];for(const k of ['sport','location'])if(req.query[k]){vals.push(`%${req.query[k]}%`);sql+=` AND o.${k} ILIKE $${vals.length}`;}
  if(req.query.q){vals.push(`%${req.query.q}%`);sql+=` AND (o.title ILIKE $${vals.length} OR o.description ILIKE $${vals.length} OR o.sport ILIKE $${vals.length} OR o.location ILIKE $${vals.length} OR o.eligibility ILIKE $${vals.length})`;}
- sql+=' ORDER BY o.created_at DESC';const r=await query(sql,vals);res.json(r.rows.map(o=>({...o,coach_name:`${o.first_name||''} ${o.last_name||''}`.trim()||o.username,coach_verified:o.verified})));
+ sql+=' ORDER BY o.created_at DESC';const r=await query(sql,vals);res.json(r.rows.map(o=>({...o,image:resolveMediaReference(o.image),coach_name:`${o.first_name||''} ${o.last_name||''}`.trim()||o.username,coach_verified:o.verified})));
 }));
 app.post('/api/opportunities',...auth(upload.single('image')),validateUploadedFiles,asyncHandler(async(req,res)=>{
  const cp=(await query('SELECT id FROM coach_profiles WHERE profile_id=(SELECT id FROM profiles WHERE user_id=$1)',[req.user.id])).rows[0];if(!cp)return res.status(403).json({detail:'Only coaches can create opportunities.'});
@@ -146,13 +146,13 @@ app.post('/api/opportunities',...auth(upload.single('image')),validateUploadedFi
  const {references,uploaded}=await uploadAssets({image:req.file},req.user.id);
  try {
   const r=await query(`INSERT INTO opportunities(coach_id,title,description,sport,location,event_date,last_date,eligibility,slots,image) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[cp.id,d.title,d.description,d.sport,d.location,d.event_date,d.last_date,d.eligibility||'',Number(d.slots)||20,references.image||'']);
-  res.status(201).json(r.rows[0]);
+  res.status(201).json({...r.rows[0],image:resolveMediaReference(r.rows[0].image)});
  } catch(error) {
   try { await removeStoredAssets(uploaded); } catch(cleanupError) { console.error('Failed to clean up opportunity uploads.',cleanupError); }
   throw error;
  }
 }));
-app.get('/api/opportunities/:id',...auth(async(req,res)=>{const r=await query(`SELECT o.*,cp.verified,u.username,(SELECT COUNT(*) FROM opportunity_applications a WHERE a.opportunity_id=o.id) application_count FROM opportunities o JOIN coach_profiles cp ON cp.id=o.coach_id JOIN profiles p ON p.id=cp.profile_id JOIN users u ON u.id=p.user_id WHERE o.id=$1`,[req.params.id]);if(!r.rowCount)return res.status(404).json({detail:'Not found.'});res.json(r.rows[0]);}));
+app.get('/api/opportunities/:id',...auth(async(req,res)=>{const r=await query(`SELECT o.*,cp.verified,u.username,(SELECT COUNT(*) FROM opportunity_applications a WHERE a.opportunity_id=o.id) application_count FROM opportunities o JOIN coach_profiles cp ON cp.id=o.coach_id JOIN profiles p ON p.id=cp.profile_id JOIN users u ON u.id=p.user_id WHERE o.id=$1`,[req.params.id]);if(!r.rowCount)return res.status(404).json({detail:'Not found.'});res.json({...r.rows[0],image:resolveMediaReference(r.rows[0].image)});}));
 app.post('/api/opportunities/:id',...auth(async(req,res)=>{
  const d=req.body;const pp=(await query('SELECT id FROM player_profiles WHERE profile_id=(SELECT id FROM profiles WHERE user_id=$1)',[req.user.id])).rows[0];if(!pp)return res.status(403).json({detail:'Only players can apply.'});
  const o=(await query('SELECT * FROM opportunities WHERE id=$1 AND active=true',[req.params.id])).rows[0];if(!o)return res.status(404).json({detail:'Opportunity not found.'});
@@ -244,11 +244,11 @@ app.get('/api/feed',...auth(async(req,res)=>{
 app.get('/api/dashboard',...auth(async(req,res)=>{
  const p=(await query('SELECT * FROM profiles WHERE user_id=$1',[req.user.id])).rows[0];const opp=await query('SELECT * FROM opportunities WHERE active=true AND last_date>=CURRENT_DATE ORDER BY event_date LIMIT 6');
  let news=await query(`SELECT * FROM news WHERE active=true AND (pincode=$1 OR (pincode='' AND (location ILIKE $2 OR location=''))) ORDER BY published_at DESC LIMIT 6`,[p.pincode,`%${req.query.location||p.location}%`]);
- const posts=await query('SELECT id FROM posts ORDER BY created_at DESC LIMIT 10');res.json({opportunities:opp.rows,news:news.rows,posts:await Promise.all(posts.rows.map(x=>postData(x.id,req.user.id)))});
+ const posts=await query('SELECT id FROM posts ORDER BY created_at DESC LIMIT 10');res.json({opportunities:opp.rows.map(o=>({...o,image:resolveMediaReference(o.image)})),news:news.rows,posts:await Promise.all(posts.rows.map(x=>postData(x.id,req.user.id)))});
 }));
 app.get('/api/local-hub',...auth(async(req,res)=>{
  const p=(await query('SELECT * FROM profiles WHERE user_id=$1',[req.user.id])).rows[0];const posts=await query(`SELECT p.id FROM posts p JOIN users u ON u.id=p.author_id JOIN profiles pr ON pr.user_id=u.id WHERE pr.pincode=$1 OR (pr.pincode='' AND pr.location ILIKE $2) ORDER BY p.created_at DESC LIMIT 30`,[p.pincode,`%${p.location}%`]);
- const opp=await query('SELECT * FROM opportunities WHERE active=true AND location ILIKE $1 ORDER BY created_at DESC LIMIT 20',[`%${p.location}%`]);res.json({posts:await Promise.all(posts.rows.map(x=>postData(x.id,req.user.id))),opportunities:opp.rows});
+ const opp=await query('SELECT * FROM opportunities WHERE active=true AND location ILIKE $1 ORDER BY created_at DESC LIMIT 20',[`%${p.location}%`]);res.json({posts:await Promise.all(posts.rows.map(x=>postData(x.id,req.user.id))),opportunities:opp.rows.map(o=>({...o,image:resolveMediaReference(o.image)}))});
 }));
 
 // News, notifications, search
@@ -260,7 +260,7 @@ app.get('/api/search',...auth(async(req,res)=>{
  const us=await query(`SELECT u.id FROM users u WHERE u.username ILIKE $1 OR u.first_name ILIKE $1 OR u.last_name ILIKE $1 LIMIT 20`,[like]);
  const op=await query('SELECT * FROM opportunities WHERE active=true AND (title ILIKE $1 OR description ILIKE $1 OR sport ILIKE $1 OR location ILIKE $1) LIMIT 20',[like]);
  const nw=await query('SELECT * FROM news WHERE active=true AND (title ILIKE $1 OR summary ILIKE $1 OR location ILIKE $1) LIMIT 20',[like]);
- res.json({users:await Promise.all(us.rows.map(x=>profileData(x.id,req.user.id))),opportunities:op.rows,news:nw.rows});
+ res.json({users:await Promise.all(us.rows.map(x=>profileData(x.id,req.user.id))),opportunities:op.rows.map(o=>({...o,image:resolveMediaReference(o.image)})),news:nw.rows});
 }));
 
 // Direct messaging / conversations

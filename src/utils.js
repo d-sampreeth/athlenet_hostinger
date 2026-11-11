@@ -1,5 +1,5 @@
 import { query } from './db.js';
-import { resolvePrivateReference } from './storage.js';
+import { resolveMediaReference, resolvePrivateReference } from './storage.js';
 export const asyncHandler = fn => (req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 export const clean = v => String(v ?? '').trim();
 export function validExperience(value){
@@ -18,7 +18,7 @@ export async function userMini(id){
  const r=await query(`SELECT u.id,u.username,u.first_name,u.last_name,p.role,p.photo,p.location
  FROM users u LEFT JOIN profiles p ON p.user_id=u.id WHERE u.id=$1`,[id]);
  const user=r.rows[0];if(!user)return null;
- return {...user,name:`${user.first_name||''} ${user.last_name||''}`.trim()||user.username};
+ return {...user,photo:resolveMediaReference(user.photo),name:`${user.first_name||''} ${user.last_name||''}`.trim()||user.username};
 }
 export async function profileData(userId,viewerId=userId){
  const r=await query(`SELECT u.id AS user_id,u.username,u.email,u.first_name,u.last_name,u.date_of_birth,u.marital_status,p.*,
@@ -36,7 +36,7 @@ export async function profileData(userId,viewerId=userId){
   return {...achievement,proof:await resolvePrivateReference(achievement.proof,userId,viewerId)};
  }));
  const name=`${x.first_name||''} ${x.last_name||''}`.trim()||x.username;
- return {user:{id:x.user_id,username:x.username,first_name:x.first_name,last_name:x.last_name,name},username:x.username,first_name:x.first_name,last_name:x.last_name,role:x.role,email:isOwner?x.email:'',date_of_birth:isOwner?x.date_of_birth:null,marital_status:isOwner?x.marital_status:'',phone:isOwner?x.phone:'',location:x.location,pincode:x.pincode,bio:x.bio,interests:x.interests,photo:x.photo,cover_image:x.cover_image,
+ return {user:{id:x.user_id,username:x.username,first_name:x.first_name,last_name:x.last_name,name},username:x.username,first_name:x.first_name,last_name:x.last_name,role:x.role,email:isOwner?x.email:'',date_of_birth:isOwner?x.date_of_birth:null,marital_status:isOwner?x.marital_status:'',phone:isOwner?x.phone:'',location:x.location,pincode:x.pincode,bio:x.bio,interests:x.interests,photo:resolveMediaReference(x.photo),cover_image:resolveMediaReference(x.cover_image),
  coach_details:x.role==='coach'?{age:x.coach_age,gender:x.coach_gender,sport:x.coach_sport,experience:x.coach_experience,academy:x.academy,certificate:await resolvePrivateReference(x.coach_certificate,userId,viewerId),government_recognition:x.government_recognition,verified:x.verified}:null,
  player_details:x.role==='player'?{age:x.player_age,gender:x.player_gender,sport:x.player_sport,level:x.level,district:x.district,state:x.state,experience:x.player_experience,ranking:x.ranking,statistics:x.statistics,achievements:achievementDetails}:null,
  followers_count:Number(counts.rows[0].followers_count),following_count:Number(counts.rows[0].following_count),is_following:counts.rows[0].is_following};
@@ -47,6 +47,6 @@ export async function postData(id,viewerId){
  (SELECT COUNT(*) FROM comments c WHERE c.post_id=p.id) comments_count,
  EXISTS(SELECT 1 FROM likes l WHERE l.post_id=p.id AND l.user_id=$2) liked
  FROM posts p JOIN users u ON u.id=p.author_id LEFT JOIN profiles pr ON pr.user_id=u.id WHERE p.id=$1`,[id,viewerId]);
- if(!r.rowCount)return null;const p=r.rows[0];return {...p,author:{id:p.author_id,username:p.username,first_name:p.first_name,last_name:p.last_name,name:`${p.first_name||''} ${p.last_name||''}`.trim()||p.username,role:p.role,photo:p.photo},liked:p.liked,likes_count:Number(p.likes_count),comments_count:Number(p.comments_count)};
+ if(!r.rowCount)return null;const p=r.rows[0];return {...p,image:resolveMediaReference(p.image),author:{id:p.author_id,username:p.username,first_name:p.first_name,last_name:p.last_name,name:`${p.first_name||''} ${p.last_name||''}`.trim()||p.username,role:p.role,photo:resolveMediaReference(p.photo)},liked:p.liked,likes_count:Number(p.likes_count),comments_count:Number(p.comments_count)};
 }
 export async function notify(userId,message,link=''){await query('INSERT INTO notifications(user_id,message,link) VALUES($1,$2,$3)',[userId,message,link]);}

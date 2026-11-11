@@ -141,6 +141,19 @@ export async function removeStoredAssets(assets) {
   }
 }
 
+export function resolveMediaReference(reference) {
+  if (typeof reference !== 'string' || !reference.startsWith(PRIVATE_REFERENCE_PREFIX)) return reference;
+  const remainder = reference.slice(PRIVATE_REFERENCE_PREFIX.length);
+  const separator = remainder.indexOf('/');
+  if (separator <= 0 || separator === remainder.length - 1) return '';
+  const bucket = remainder.slice(0, separator);
+  const objectPath = remainder.slice(separator + 1);
+  const config = getConfig();
+  if (bucket !== config.SUPABASE_MEDIA_BUCKET) return '';
+  const { data } = getClient(config).storage.from(bucket).getPublicUrl(objectPath);
+  return data?.publicUrl || '';
+}
+
 export async function resolveStoredReference(reference) {
   if (typeof reference !== 'string' || !reference.startsWith(PRIVATE_REFERENCE_PREFIX)) return reference;
   const remainder = reference.slice(PRIVATE_REFERENCE_PREFIX.length);

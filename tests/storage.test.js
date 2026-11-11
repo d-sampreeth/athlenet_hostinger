@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { detectFileType, resolvePrivateReference, resolveStoredReference, validateUploadFile } from '../src/storage.js';
+import { detectFileType, resolveMediaReference, resolvePrivateReference, resolveStoredReference, validateUploadFile } from '../src/storage.js';
 
 const signatures = {
   jpeg: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
@@ -61,6 +61,32 @@ test('preserves existing local and public URLs', async () => {
   const publicReference = 'https://project.supabase.co/storage/v1/object/public/athlenet-media/image.png';
   assert.equal(await resolveStoredReference(legacyReference), legacyReference);
   assert.equal(await resolveStoredReference(publicReference), publicReference);
+});
+
+test('resolves public media storage references and rejects document-bucket references', () => {
+  const configNames = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_MEDIA_BUCKET', 'SUPABASE_DOCUMENTS_BUCKET'];
+  const previous = Object.fromEntries(configNames.map(name => [name, process.env[name]]));
+  try {
+    process.env.SUPABASE_URL = 'https://test-project.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+    process.env.SUPABASE_MEDIA_BUCKET = 'athlenet-media';
+    process.env.SUPABASE_DOCUMENTS_BUCKET = 'athlenet-documents';
+    assert.equal(
+      resolveMediaReference('supabase-storage://athlenet-media/42/photo/image.png'),
+      'https://test-project.supabase.co/storage/v1/object/public/athlenet-media/42/photo/image.png',
+    );
+    assert.equal(resolveMediaReference('supabase-storage://athlenet-documents/42/certificate/file.pdf'), '');
+    assert.equal(resolveMediaReference('/media/old-image.png'), '/media/old-image.png');
+    assert.equal(
+      resolveMediaReference('https://test-project.supabase.co/storage/v1/object/public/athlenet-media/42/photo/image.png'),
+      'https://test-project.supabase.co/storage/v1/object/public/athlenet-media/42/photo/image.png',
+    );
+  } finally {
+    for (const name of configNames) {
+      if (previous[name] === undefined) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+  }
 });
 
 test('does not resolve private document URLs for anyone except the owner', async () => {
