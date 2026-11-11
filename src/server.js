@@ -3,11 +3,11 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'node:path';
-import { unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { initDb, pool, query } from './db.js';
 import { requireAuth, issueTokens } from './middleware/auth.js';
 import { asyncHandler, clean, validPassword, validMobile, validExperience, normalizePhone, userMini, profileData, postData, notify } from './utils.js';
+import { removeStoredAssets, UploadError, uploadAssets, validateUploadFile } from './storage.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
@@ -15,12 +15,15 @@ import multer from 'multer';
 const app=express();
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const uploadDir=path.resolve(__dirname,'../uploads');
-const upload=multer({dest:uploadDir,limits:{fileSize:5*1024*1024}});
-const validatePhotoSize=(req,res,next)=>{
- const photo=req.files?.photo?.[0];
- if(!photo||photo.size<=1024*1024)return next();
- Promise.all(Object.values(req.files).flat().map(file=>unlink(file.path)))
-  .then(()=>res.status(400).json({detail:'Profile photos must not exceed 1 MB.'}),next);
+const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:5*1024*1024,files:3}});
+const validateUploadedFiles=(req,res,next)=>{
+ const files=req.file?[req.file]:Object.values(req.files||{}).flat();
+ try {
+  for(const file of files)validateUploadFile(file,file.fieldname);
+  next();
+ } catch(error) {
+  next(error);
+ }
 };
 const origins=(process.env.FRONTEND_ORIGINS||'http://localhost:5173').split(',').map(x=>x.trim());
 app.use(helmet({crossOriginResourcePolicy:{policy:'cross-origin'}}));
@@ -44,7 +47,7 @@ const profileId=async uid=>(await query('SELECT id FROM profiles WHERE user_id=$
 const mini=async id=>userMini(id);
 
 // Authentication: preserves the frontend's /api/auth/register and /api/auth/login contract.
-app.post('/api/auth/register',upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1},{name:'achievement_proof',maxCount:1}]),validatePhotoSize,publicAsync(async(req,res)=>{
+app.post('/api/auth/register',upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1},{name:'achievement_proof',maxCount:1}]),validateUploadedFiles,publicAsync(async(req,res)=>{
  const d={...req.body};const email=clean(d.email).toLowerCase(),password=d.password;const role=d.role||'user',username=role==='player'?email:(clean(d.username)||email),maritalStatus=clean(d.marital_status),dateOfBirth=clean(d.date_of_birth);
  if(!email||!username||!password)return res.status(400).json({detail:'Username, email and password are required.'});
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({detail:'Enter a valid email address.'});
@@ -58,14 +61,20 @@ app.post('/api/auth/register',upload.fields([{name:'photo',maxCount:1},{name:'ce
  const phone=clean(d.phone),phoneKey=normalizePhone(phone);if(!validMobile(phone))return res.status(400).json({detail:'Enter a 10-digit mobile number starting with 6, 7, 8, or 9. Each digit can appear at most 6 times.'});
  const exists=await query('SELECT 1 FROM users WHERE username=$1 OR lower(email)=lower($2)',[username,email]);if(exists.rowCount)return res.status(400).json({detail:'An account with this username/email already exists.'});
  if(phoneKey&&(await query('SELECT 1 FROM profiles WHERE phone_key=$1',[phoneKey])).rowCount)return res.status(400).json({detail:'An account with this mobile number already exists.'});
- const client=await pool.connect();try{
- await client.query('BEGIN');const hash=await bcrypt.hash(password,12);
+ const client=await pool.connect();let storedAssets=[],transactionStarted=false,committed=false;try{
+ await client.query('BEGIN');transactionStarted=true;const hash=await bcrypt.hash(password,12);
  const u=(await client.query('INSERT INTO users(username,email,password_hash,first_name,last_name,date_of_birth,marital_status) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',[username,email,hash,clean(d.first_name),clean(d.last_name),dateOfBirth||null,maritalStatus])).rows[0];
- const p=(await client.query('INSERT INTO profiles(user_id,role,phone,phone_key,location,pincode,bio,interests,photo) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',[u.id,role,phone,phoneKey||null,clean(d.location),pincode,clean(d.bio),clean(d.interests),req.files?.photo?.[0]?`/media/${path.basename(req.files.photo[0].path)}`:''])).rows[0];
- if(role==='coach')await client.query('INSERT INTO coach_profiles(profile_id,age,gender,sport,experience,academy,certificate,government_recognition) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[p.id,d.age||null,clean(d.gender),clean(d.sport),Number(d.experience)||0,clean(d.academy),req.files?.certificate?.[0]?`/media/${path.basename(req.files.certificate[0].path)}`:'',clean(d.government_recognition)]);
- if(role==='player'){const pp=(await client.query('INSERT INTO player_profiles(profile_id,age,gender,sport,level,district,state,experience,ranking,statistics) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id',[p.id,d.age||null,gender,clean(d.sport),clean(d.level),clean(d.district),clean(d.state),Number(d.experience)||0,clean(d.ranking),clean(d.statistics)])).rows[0];if(d.achievement_title)await client.query('INSERT INTO achievements(player_id,title,description,year,proof) VALUES($1,$2,$3,$4,$5)',[pp.id,clean(d.achievement_title),clean(d.achievement_description),d.achievement_year||null,req.files?.achievement_proof?.[0]?`/media/${path.basename(req.files.achievement_proof[0].path)}`:'']);}
- await client.query('COMMIT');const tokens=issueTokens(u);res.status(201).json({...tokens,user:await mini(u.id)});
- }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
+ const {references,uploaded}=await uploadAssets({
+  photo:req.files?.photo?.[0],
+  certificate:role==='coach'?req.files?.certificate?.[0]:undefined,
+  achievement_proof:role==='player'&&d.achievement_title?req.files?.achievement_proof?.[0]:undefined,
+ },u.id);
+ storedAssets=uploaded;
+ const p=(await client.query('INSERT INTO profiles(user_id,role,phone,phone_key,location,pincode,bio,interests,photo) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',[u.id,role,phone,phoneKey||null,clean(d.location),pincode,clean(d.bio),clean(d.interests),references.photo||''])).rows[0];
+ if(role==='coach')await client.query('INSERT INTO coach_profiles(profile_id,age,gender,sport,experience,academy,certificate,government_recognition) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[p.id,d.age||null,clean(d.gender),clean(d.sport),Number(d.experience)||0,clean(d.academy),references.certificate||'',clean(d.government_recognition)]);
+ if(role==='player'){const pp=(await client.query('INSERT INTO player_profiles(profile_id,age,gender,sport,level,district,state,experience,ranking,statistics) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id',[p.id,d.age||null,gender,clean(d.sport),clean(d.level),clean(d.district),clean(d.state),Number(d.experience)||0,clean(d.ranking),clean(d.statistics)])).rows[0];if(d.achievement_title)await client.query('INSERT INTO achievements(player_id,title,description,year,proof) VALUES($1,$2,$3,$4,$5)',[pp.id,clean(d.achievement_title),clean(d.achievement_description),d.achievement_year||null,references.achievement_proof||'']);}
+ await client.query('COMMIT');committed=true;const tokens=issueTokens(u);res.status(201).json({...tokens,user:await mini(u.id)});
+ }catch(e){if(!committed){if(transactionStarted){try{await client.query('ROLLBACK');}catch(rollbackError){console.error('Failed to roll back registration.',rollbackError);}}if(storedAssets.length){try{await removeStoredAssets(storedAssets);}catch(cleanupError){console.error('Failed to clean up registration uploads.',cleanupError);}}}throw e;}finally{client.release();}
 }));
 app.post('/api/auth/login',publicAsync(async(req,res)=>{
  const username=clean(req.body.username),password=req.body.password;
@@ -80,7 +89,7 @@ app.post('/api/token/refresh',publicAsync(async(req,res)=>{
 
 // Current profile /me/
 app.get('/api/me',...auth(async(req,res)=>res.json(await profileData(req.user.id,req.user.id))));
-app.patch('/api/me',requireAuth,upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1}]),validatePhotoSize,asyncHandler(async(req,res)=>{
+app.patch('/api/me',requireAuth,upload.fields([{name:'photo',maxCount:1},{name:'certificate',maxCount:1}]),validateUploadedFiles,asyncHandler(async(req,res)=>{
  const d=req.body,uid=req.user.id,pid=await profileId(uid);
  if(d.experience!==undefined&&!validExperience(d.experience))return res.status(400).json({detail:'Experience must be a non-negative whole number.'});
  const userFields=['first_name','last_name'];for(const f of userFields)if(d[f]!==undefined)await query(`UPDATE users SET ${f}=$1 WHERE id=$2`,[clean(d[f]),uid]);
@@ -88,10 +97,17 @@ app.patch('/api/me',requireAuth,upload.fields([{name:'photo',maxCount:1},{name:'
  const p=(await query('SELECT * FROM profiles WHERE id=$1',[pid])).rows[0];
  const allowed=['phone','location','pincode','bio','interests'];const sets=[],vals=[];for(const f of allowed)if(d[f]!==undefined){if(f==='pincode'&&!/^[1-9][0-9]{5}$/.test(clean(d[f])))return res.status(400).json({pincode:['A 6-digit Indian PIN code is required.']});if(f==='phone'&&d[f]&&!normalizePhone(d[f]))return res.status(400).json({detail:'Enter a 10-digit mobile number starting with 6, 7, 8, or 9; no digit may appear more than 6 times.'});vals.push(f==='phone'?clean(d[f]):clean(d[f]));sets.push(`${f}=$${vals.length}`);}
  if(d.phone!==undefined){vals.push(normalizePhone(d.phone)||null);sets.push(`phone_key=$${vals.length}`);}
- if(req.files?.photo?.[0]){vals.push(`/media/${path.basename(req.files.photo[0].path)}`);sets.push(`photo=$${vals.length}`);}
- if(sets.length){vals.push(pid);await query(`UPDATE profiles SET ${sets.join(',')} WHERE id=$${vals.length}`,vals);}
  const detailTable=p.role==='coach'?'coach_profiles':p.role==='player'?'player_profiles':null;
- if(detailTable){const detail=(await query(`SELECT * FROM ${detailTable} WHERE profile_id=$1`,[pid])).rows[0];const fields=detailTable==='coach_profiles'?['age','gender','sport','experience','academy','government_recognition']:['age','gender','sport','experience','level','district','state','ranking','statistics'];const ds=[],dv=[];for(const f of fields)if(d[f]!==undefined){dv.push(f==='age'||f==='experience'?(Number(d[f])||null):clean(d[f]));ds.push(`${f}=$${dv.length}`);}if(detailTable==='coach_profiles'&&req.files?.certificate?.[0]){dv.push(`/media/${path.basename(req.files.certificate[0].path)}`);ds.push(`certificate=$${dv.length}`);}if(ds.length){dv.push(detail.id);await query(`UPDATE ${detailTable} SET ${ds.join(',')} WHERE id=$${dv.length}`,dv);}}
+ const detail=detailTable?(await query(`SELECT * FROM ${detailTable} WHERE profile_id=$1`,[pid])).rows[0]:null;
+ const {references,uploaded}=await uploadAssets({photo:req.files?.photo?.[0],certificate:p.role==='coach'?req.files?.certificate?.[0]:undefined},uid);
+ try {
+  if(references.photo){vals.push(references.photo);sets.push(`photo=$${vals.length}`);}
+  if(sets.length){vals.push(pid);await query(`UPDATE profiles SET ${sets.join(',')} WHERE id=$${vals.length}`,vals);}
+  if(detailTable){const fields=detailTable==='coach_profiles'?['age','gender','sport','experience','academy','government_recognition']:['age','gender','sport','experience','level','district','state','ranking','statistics'];const ds=[],dv=[];for(const f of fields)if(d[f]!==undefined){dv.push(f==='age'||f==='experience'?(Number(d[f])||null):clean(d[f]));ds.push(`${f}=$${dv.length}`);}if(detailTable==='coach_profiles'&&references.certificate){dv.push(references.certificate);ds.push(`certificate=$${dv.length}`);}if(ds.length){dv.push(detail.id);await query(`UPDATE ${detailTable} SET ${ds.join(',')} WHERE id=$${dv.length}`,dv);}}
+ } catch(error) {
+  try { await removeStoredAssets(uploaded); } catch(cleanupError) { console.error('Failed to clean up profile uploads.',cleanupError); }
+  throw error;
+ }
  res.json(await profileData(uid,uid));
 }));
 
@@ -139,9 +155,13 @@ app.post('/api/opportunities/:id',...auth(async(req,res)=>{
 app.get('/api/posts',...auth(async(req,res)=>{
  const vals=[];let sql='SELECT p.id FROM posts p';if(req.query.author){vals.push(req.query.author);sql+=' JOIN users u ON u.id=p.author_id WHERE u.username=$1';}sql+=' ORDER BY p.created_at DESC,p.id DESC LIMIT 100';const r=await query(sql,vals);res.json(await Promise.all(r.rows.map(x=>postData(x.id,req.user.id))));
 }));
-app.post('/api/posts',...auth(upload.single('image')),asyncHandler(async(req,res)=>{
+app.post('/api/posts',...auth(upload.single('image')),validateUploadedFiles,asyncHandler(async(req,res)=>{
  const d=req.body; if(!clean(d.content))return res.status(400).json({detail:'Post content is required.'});
- const img=req.file?`/media/${path.basename(req.file.path)}`:'';const r=await query('INSERT INTO posts(author_id,content,image,post_type,sport) VALUES($1,$2,$3,$4,$5) RETURNING id',[req.user.id,d.content,img,d.post_type||'discussion',d.sport||'']);res.status(201).json(await postData(r.rows[0].id,req.user.id));
+ const {references,uploaded}=await uploadAssets({image:req.file},req.user.id);
+ let postId;
+ try { const r=await query('INSERT INTO posts(author_id,content,image,post_type,sport) VALUES($1,$2,$3,$4,$5) RETURNING id',[req.user.id,d.content,references.image||'',d.post_type||'discussion',d.sport||'']);postId=r.rows[0].id; }
+ catch(error) { try { await removeStoredAssets(uploaded); } catch(cleanupError) { console.error('Failed to clean up post upload.',cleanupError); } throw error; }
+ res.status(201).json(await postData(postId,req.user.id));
 }));
 app.delete('/api/posts/:id',...auth(async(req,res)=>{const r=await query('DELETE FROM posts WHERE id=$1 AND author_id=$2',[req.params.id,req.user.id]);if(!r.rowCount)return res.status(404).json({detail:'Post not found or not yours.'});res.status(204).end();}));
 app.post('/api/posts/:id/like',...auth(async(req,res)=>{
@@ -264,7 +284,7 @@ app.get('*', (req, res, next) => {
 
   res.sendFile(path.join(frontendDist, 'index.html'));
 });
-app.use((err,req,res,next)=>{console.error(err);if(res.headersSent)return next(err);if(err instanceof multer.MulterError){const detail=err.code==='LIMIT_FILE_SIZE'?'Uploaded files must not exceed 5 MB.':err.message;return res.status(400).json({detail});}if(err.code==='23505')return res.status(400).json({detail:'A record with these details already exists.'});if(err.code==='23503')return res.status(400).json({detail:'Referenced record does not exist.'});res.status(500).json({detail:process.env.NODE_ENV==='production'?'Internal server error.':err.message});});
+app.use((err,req,res,next)=>{console.error(err);if(res.headersSent)return next(err);if(err instanceof UploadError)return res.status(err.status).json({detail:err.message});if(err instanceof multer.MulterError){const detail=err.code==='LIMIT_FILE_SIZE'?'Uploaded files must not exceed 5 MB.':err.message;return res.status(400).json({detail});}if(err.code==='23505')return res.status(400).json({detail:'A record with these details already exists.'});if(err.code==='23503')return res.status(400).json({detail:'Referenced record does not exist.'});res.status(500).json({detail:process.env.NODE_ENV==='production'?'Internal server error.':err.message});});
 const port=process.env.PORT||5000;
 await initDb();
 app.listen(port,()=>console.log(`AthleNet Node API running on http://localhost:${port}`));

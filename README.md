@@ -60,11 +60,33 @@ VITE_API_URL=http://localhost:5000
 
 The existing frontend `src/api.js` appends `/api` automatically when the configured URL does not already end with `/api`. Restart Vite after changing this value.
 
+## Persistent user uploads
+
+User-uploaded files are stored in the existing Supabase Storage project; keep its PostgreSQL `DATABASE_URL` unchanged. Configure these variables on the backend (for local development, in the ignored root `.env`; in production, in Hostinger's backend environment settings):
+
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
+SUPABASE_MEDIA_BUCKET=athlenet-media
+SUPABASE_DOCUMENTS_BUCKET=athlenet-documents
+```
+
+Never put the service-role key in frontend environment variables or commit it. The media bucket must allow public reads for profile and post images. The documents bucket can remain private; the API issues short-lived signed URLs for stored certificates and achievement proofs. Profile/post images accept JPEG, PNG, GIF, or WebP; documents accept JPEG, PNG, WebP, or PDF. Profile photos are limited to 1 MB, and all files to 5 MB.
+
+New database references are permanent Supabase URLs for media and `supabase-storage://` object references for private documents. Existing `/media/...` references remain supported while their original files are available. The migration utility is dry-run by default; before applying it, make a database backup and ensure the original `uploads` directory is present on the same host as the target database:
+
+```powershell
+npm run migrate:uploads
+npm run migrate:uploads -- --apply
+```
+
+The migration uploads verified files and updates only matching database references; it never deletes the original files. A dry run reports missing and unsupported files. Run it against the production database only from the host that still has the corresponding original uploads, after taking backups.
+
 ## Important migration notes
 
 1. This is a new Node backend and a new PostgreSQL schema. It does not automatically import the existing Django SQLite database.
 2. Django password hashes cannot be verified by bcryptjs directly. Existing users need a password-reset flow or a separately planned one-time password migration.
-3. Uploads are written to the local `uploads/` directory. For production hosting, mount persistent storage or change this to S3-compatible object storage. Do not rely on ephemeral server disk for user uploads.
+3. New user uploads are stored in Supabase Storage. Legacy `/media/...` files are still served from `uploads/` until migrated; run the documented dry-run migration and preserve a backup before applying it on the host that has the original files.
 4. Configure a persistent PostgreSQL service and automated backups for production.
 5. The original Django admin interface is not recreated. Manage records through API/database tools or build an admin panel.
 6. Real-time WebSockets are not included; messages are currently delivered through REST endpoints and polling.

@@ -8,6 +8,8 @@
     "dev": "nodemon src/server.js",
     "check": "node --check src/server.js",
     "test": "node --test tests/feed.integration.test.js",
+    "test:unit": "node --test tests/phone-validation.test.js tests/storage.test.js",
+    "migrate:uploads": "node src/migrate-uploads.js",
     "build": "npm install --prefix frontend --include=dev && npm run build --prefix frontend",
     "postinstall": "npm run build"
   },
@@ -15,6 +17,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.100.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
